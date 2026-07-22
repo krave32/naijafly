@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+venv/
+.venv/
+
+# Environment
+.env
+
+# IDE
+.vscode/
+.idea/
+
+# Assets (large files)
+assets/
+
+# Docker
+docker-compose.yml
+Dockerfile
+
+# OS
+Thumbs.db
+.DS_Store
+
+# ngrok
+ngrok/
