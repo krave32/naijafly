@@ -1,8 +1,8 @@
 """Inbound WhatsApp command router.
 
 Commands (case-insensitive):
-  SUBSCRIBE LOS ACC [80000]   -> fare-drop subscription for route (optional target price)
-  FARE LOS ACC                -> current cheapest fare, local + USD
+  SUBSCRIBE LOS ABV [80000]   -> fare-drop subscription for route (optional target price)
+  FARE LOS ABV                -> current cheapest fare, local + USD
   TRACK P47123 2026-07-20     -> subscribe to a specific flight's status pushes
   <anything else while tracking a flight> -> treated as a status report
   HELP                        -> command list
@@ -10,9 +10,13 @@ Commands (case-insensitive):
 Returns the reply text to send back. All DB access goes through the session
 passed in, so the router is fully unit-testable without HTTP or Twilio.
 """
+import logging
 from datetime import datetime
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+
+logger = logging.getLogger("naijafly.bot_router")
 
 from app.models.models import Route, Flight, UserSubscription, StatusType
 from app.services.fare_service import FareService
@@ -61,16 +65,28 @@ class BotRouter:
     # ---- handlers ----
 
     def _get_or_create_route(self, origin: str, dest: str) -> Route:
+        """Get existing route or create a new one. Handles race conditions
+        where two concurrent requests try to create the same route."""
         origin, dest = origin.upper(), dest.upper()
         route = self.db.query(Route).filter_by(origin=origin, destination=dest).first()
         if not route:
             route = Route(origin=origin, destination=dest)
             self.db.add(route)
-            self.db.commit()
+            try:
+                self.db.commit()
+            except IntegrityError:
+                # Another process created this route concurrently
+                self.db.rollback()
+                route = self.db.query(Route).filter_by(
+                    origin=origin, destination=dest).first()
+        logger.info("Resolved route %s->%s (id=%s)", origin, dest, route.id)
         return route
 
     def _subscribe_route(self, user_id: str, origin: str, dest: str, target: float | None) -> str:
         route = self._get_or_create_route(origin, dest)
+        logger.info(
+            "SUBSCRIBE: user=%s route=%s->%s (id=%s) target=%s",
+            user_id, route.origin, route.destination, route.id, target)
         existing = self.db.query(UserSubscription).filter_by(
             user_id=user_id, route_id=route.id).first()
         if existing:

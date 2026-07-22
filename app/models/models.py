@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Boolean, Enum
+from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Boolean, Enum, UniqueConstraint
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 import enum
@@ -21,6 +21,9 @@ class ReportStatus(enum.Enum):
 
 class Route(Base):
     __tablename__ = "routes"
+    __table_args__ = (
+        UniqueConstraint('origin', 'destination', name='uq_route_origin_destination'),
+    )
     id = Column(Integer, primary_key=True)
     origin = Column(String, index=True) # e.g. LOS, ACC
     destination = Column(String, index=True)
