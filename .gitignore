@@ -15,9 +15,8 @@ venv/
 # Assets (large files)
 assets/
 
-# Docker
+# Docker (not needed for Railway but kept for local dev)
 docker-compose.yml
-Dockerfile
 
 # OS
 Thumbs.db
