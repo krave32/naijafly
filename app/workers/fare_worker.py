@@ -181,6 +181,26 @@ def main():
     except Exception as e:
         logger.warning("Route seeding skipped (non-fatal): %s", e)
 
+    # Cleanup: remove old cross-border routes that are no longer in scope
+    try:
+        from app.seed_routes import NIGERIA_DOMESTIC_ROUTES
+        from app.models.models import Route
+        from app.core.database import SessionLocal
+        cleanup_db = SessionLocal()
+        valid = set((o, d) for o, d in NIGERIA_DOMESTIC_ROUTES)
+        stale = cleanup_db.query(Route).all()
+        removed = 0
+        for r in stale:
+            if (r.origin, r.destination) not in valid:
+                cleanup_db.delete(r)
+                removed += 1
+        cleanup_db.commit()
+        if removed:
+            logger.info("Removed %d stale cross-border routes", removed)
+        cleanup_db.close()
+    except Exception as e:
+        logger.warning("Route cleanup skipped (non-fatal): %s", e)
+
     scheduler = BlockingScheduler()
     scheduler.add_job(run_cycle, "interval", minutes=POLL_MINUTES,
                       next_run_time=datetime.now())
