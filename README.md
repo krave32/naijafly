@@ -1,18 +1,33 @@
-# NaijaFly — West Africa Flight Fare Tracker + Crowdsourced Boarding Status
+# NaijaFly — Nigeria Flight Fare Tracker + Crowdsourced Boarding Status
 
-WhatsApp-first fare alerts and passenger-reported flight status for West African routes.
+WhatsApp-first fare alerts and passenger-reported flight status for **Nigerian domestic routes**.
 The full loop is real end-to-end: **a message in triggers a reply, a status escalation
 triggers a push, a fare drop triggers a push.**
 
-> **Note on this README:** an earlier version of this file (and this repo's test suite)
-> was stale — it described the WhatsApp webhook as "not implemented" when the code had
-> already moved past that. This version reflects the actual current state of the code,
-> verified by running the test suite below, not by re-describing an old build.
+## Scope
+
+NaijaFly tracks **Nigeria-domestic flights only** — all routes are between Nigerian
+airports (LOS, ABV, PHC, ENU, BNI, KAN, CBQ, ILR, QOW, AKR). All fares are in NGN.
+
+**Why not West Africa-wide?** Cross-border routes (Accra, Dakar, Abidjan, Freetown)
+were removed to focus on the market where NaijaFly has the strongest carrier coverage
+and the highest demand. Cross-border routes also required multi-currency handling
+(GHS, XOF, SLL) that added complexity without proportional value.
+
+**Why is Dana Air removed?** Dana Air (IATA: 9J) was suspended by the Nigerian NCAA
+in April 2024 following a runway incident and has ceased operations. Its route
+obligations were transferred to NG Eagle, a newer carrier now tracked instead.
+Dana Air is kept in `WEST_AFRICAN_AIRLINES` as a historical reference only.
+
+**Why is Amadeus secondary?** Amadeus GDS does not cover any Nigerian domestic carrier
+directly (Air Peace, Arik Air, Ibom Air, etc. are not on GDS). Google Flights is the
+meaningful real-data path for this scope. Amadeus code is retained for potential
+future international route expansion.
 
 ## Architecture
 
 ```
-docker-compose
+docker-compose / Railway
 ├── db       Postgres 15 (fares, subscriptions, reports, scores, alert history)
 ├── app      FastAPI: /webhook/whatsapp (Twilio inbound), /admin, /health
 └── worker   APScheduler: FX refresh + fare ingestion + price-drop pushes
@@ -24,10 +39,15 @@ Fare ingestion and boarding status stay **decoupled**: different services
 ## Running it
 
 ```bash
+# Docker
 docker-compose up --build
-# API:    http://localhost:8000
-# Admin:  http://localhost:8000/admin
-# Health: http://localhost:8000/health   (shows notifier mode: twilio|console)
+
+# Local development
+python -m uvicorn app.main:app --reload
+python -m app.workers.fare_worker
+
+# Production (Railway via start.sh)
+sh start.sh  # runs both web + worker in one process
 ```
 
 Copy `.env.example` to `.env` and fill in real values to go live. Without Twilio
@@ -38,91 +58,84 @@ nothing else changes.
 
 | Message | Effect |
 |---|---|
-| `SUBSCRIBE LOS ACC 80000` | Fare-drop alerts for route (target price optional) |
-| `FARE LOS ACC` | Current cheapest fare, local currency + USD |
+| `SUBSCRIBE LOS ABV` | Fare-drop alerts, rolling 30-day window |
+| `SUBSCRIBE LOS ABV 80000` | Same, with target price |
+| `SUBSCRIBE LOS ABV 2026-08-15` | Fare-drop alerts for that specific date only |
+| `SUBSCRIBE LOS ABV 2026-08-15 80000` | Specific date + target price |
+| `FARE LOS ABV` | Cheapest fare in next 30 days |
+| `FARE LOS ABV 2026-08-15` | Cheapest fare for that specific date |
 | `TRACK P47123 2026-07-20` | Live boarding/gate/delay pushes for that flight |
 | `boarding now gate 12` (while tracking) | Files a status report |
 | `HELP` | Command list |
 
+### Date-aware fares
+
+- **Rolling window** (default): searches fares across the next 30 days. The worker
+  samples dates every `FARE_WINDOW_SAMPLE_DAYS` (default 5) within the window to
+  avoid multiplying API calls.
+- **Specific date**: pass a YYYY-MM-DD date to search only that date.
+- `get_cheapest_fare()` is always scoped — it never compares a cheap Tuesday fare
+  against an expensive Christmas fare on the same route.
+
 ## Fare data sources
 
-Toggle with the `FARE_SOURCE` env var — `mock` (default), `amadeus`, `google`, or
-`hybrid`. No redeploy needed, no code change either way; see
-`app/services/fare_ingestor.py`.
+Toggle with the `FARE_SOURCE` env var — `mock` (default), `google`, `amadeus`, or
+`hybrid`. No redeploy needed.
 
-| Source | What it provides | API key needed? |
-|---|---|---|
-| `MockFareIngestor` | Deterministic test data, realistic price jitter | No |
-| `AmadeusFareIngestor` | GDS fares for international/regional carriers | Yes (free tier) |
-| `GoogleFlightsIngestor` | **Google Flights fares — covers Air Peace, Arik, Ibom, etc.** | No |
-| `HybridIngestor` | Google Flights + Amadeus combined for maximum coverage | Amadeus key only |
-
-### Google Flights integration (recommended for West African carriers)
-
-The `GoogleFlightsIngestor` uses the [fli](https://github.com/punitarani/fli) library
-(`pip install flights`) which reverse-engineers Google Flights' internal API. This is
-the **single best source** for Nigerian and West African domestic carrier fares because
-Google aggregates from airline websites and OTAs — covering carriers that are NOT on
-any GDS.
-
-**Confirmed airline coverage via Google Flights:**
-
-| Airline | IATA | Google Flights? | Amadeus GDS? |
+| Source | What it provides | API key needed? | Nigeria-domestic relevance |
 |---|---|---|---|
-| Air Peace | P4 | **Yes** (confirmed live) | No |
-| Arik Air | W3 | **Yes** | No |
-| Ibom Air | QI | Likely (limited routes) | No |
-| Dana Air | 9J | Possible (intermittent ops) | No |
-| Africa World Airlines | AW | Possible (Ghana routes) | No |
-| United Nigeria Airlines | UN | Possible | No |
-| Enugu Air | Q9 | Possible (limited) | No |
-| Ethiopian Airlines | ET | **Yes** | **Yes** |
-| Kenya Airways | KQ | **Yes** | **Yes** |
-| Royal Air Maroc | AT | **Yes** | **Yes** |
+| `MockFareIngestor` | Deterministic test data, realistic price jitter | No | Dev/test only |
+| `GoogleFlightsIngestor` | **Google Flights fares — covers Air Peace, Arik, Ibom, etc.** | No | **PRIMARY** |
+| `AmadeusFareIngestor` | GDS fares (international carriers) | Yes (free tier) | Secondary (no NG domestic coverage) |
+| `HybridIngestor` | Google Flights + Amadeus combined | Amadeus key only | Secondary |
 
-**Tracked routes (Nigeria + West Africa):**
+### Tracked routes (Nigeria domestic only)
 
 | Route | Description | Expected carriers |
 |---|---|---|
 | LOS-ABV / ABV-LOS | Lagos - Abuja | Air Peace, Arik, Ibom, United Nigeria |
-| LOS-PHC / PHC-LOS | Lagos - Port Harcourt | Air Peace, Arik, Dana |
+| LOS-PHC / PHC-LOS | Lagos - Port Harcourt | Air Peace, Arik |
 | LOS-ENU / ENU-LOS | Lagos - Enugu | Air Peace, Enugu Air, Ibom |
 | LOS-BNI / BNI-LOS | Lagos - Benin City | Air Peace, Arik |
-| LOS-KAN | Lagos - Kano | Air Peace, Arik |
-| LOS-CBQ | Lagos - Calabar | Ibom Air, Air Peace |
-| ABV-PHC | Abuja - Port Harcourt | Air Peace, Arik |
+| LOS-KAN / KAN-LOS | Lagos - Kano | Air Peace, Max Air |
+| LOS-CBQ / CBQ-LOS | Lagos - Calabar | Ibom Air, Air Peace |
+| LOS-ILR / ILR-LOS | Lagos - Ilorin | Air Peace, Overland |
+| LOS-QOW / QOW-LOS | Lagos - Owerri | Air Peace, United Nigeria |
+| ABV-PHC / PHC-ABV | Abuja - Port Harcourt | Air Peace, Arik |
 | ABV-ENU / ENU-ABV | Abuja - Enugu | Air Peace, Enugu Air |
-| ABV-BNI | Abuja - Benin City | Air Peace |
-| LOS-ACC / ACC-LOS | Lagos - Accra | Air Peace, AWA, Ethiopian |
-| ACC-KMS / KMS-ACC | Accra - Kumasi | AWA |
-| ACC-TML | Accra - Tamale | AWA |
-| LOS-DKR | Lagos - Dakar | Royal Air Maroc, Ethiopian |
-| LOS-ABJ | Lagos - Abidjan | Air Côte d'Ivoire, Air Peace |
+| ABV-BNI / BNI-ABV | Abuja - Benin City | Air Peace |
+| ABV-KAN / KAN-ABV | Abuja - Kano | Air Peace, Max Air |
+| ABV-CBQ / CBQ-ABV | Abuja - Calabar | Ibom Air |
+| PHC-ENU / ENU-PHC | Port Harcourt - Enugu | Air Peace |
 
-To activate Google Flights:
-```bash
-pip install flights curl_cffi
-# In .env:
-FARE_SOURCE=google
-# Or for maximum coverage:
-FARE_SOURCE=hybrid
-```
+### Nigerian domestic carriers
 
-### Amadeus GDS coverage (international/regional routes)
+| Airline | IATA | Google Flights? | Amadeus GDS? |
+|---|---|---|---|
+| Air Peace | P4 | **Yes** | No |
+| Arik Air | W3 | **Yes** | No |
+| Ibom Air | QI | Likely | No |
+| United Nigeria Airlines | UN | Possible | No |
+| Green Africa Airways | NK | Possible | No |
+| ValueJet | VK | Possible | No |
+| Overland Airways | OF | Limited | No |
+| NG Eagle | NE | Possible (new carrier) | No |
+| Max Air | MX | Primarily Kano hub | No |
+| Umza Air | UM | Limited | No |
+| Enugu Air | Q9 | Limited | No |
+| ~~Dana Air~~ | ~~9J~~ | ~~Defunct (NCAA suspended April 2024)~~ | No |
 
-Amadeus's GDS content does **not** include Air Peace, Dana Air, Ibom Air, Arik Air,
-or AWA directly. It covers GDS-connected carriers on larger regional/international
-routes. Use `FARE_SOURCE=hybrid` to combine both sources.
+### Tuning knobs
 
-To try Amadeus only: get free-tier credentials at developers.amadeus.com, set
-`AMADEUS_API_KEY` / `AMADEUS_API_SECRET` in `.env`, set `FARE_SOURCE=amadeus`,
-restart.
+| Env var | Default | Description |
+|---|---|---|
+| `FARE_POLL_MINUTES` | 5 | Worker poll interval |
+| `FARE_WINDOW_DAYS` | 30 | Rolling window length |
+| `FARE_WINDOW_SAMPLE_DAYS` | 5 | Sample every N days within window |
+| `FARE_SOURCE` | mock | Active ingestor: mock/google/amadeus/hybrid |
+| `GOOGLE_FLIGHTS_CURRENCY` | NGN | Currency for Google Flights queries |
 
-## Notification emoji scheme (proposed, centralized)
-
-Every outbound message is built in one place — `app/utils/notify_templates.py` —
-so the scheme below is a one-line edit per message type if you want to change it.
-Rationale for each choice is in that file's docstring.
+## Notification emoji scheme (centralized in notify_templates.py)
 
 | Message type | Emoji |
 |---|---|
@@ -138,7 +151,7 @@ Rationale for each choice is in that file's docstring.
 | Delay confirmed (push) | ⏰ |
 | Not-boarding confirmed (push) | 🕓 |
 | Other/generic status (push) | 🔔 |
-| HELP text | *(none — plain instructions, an emoji adds noise not clarity)* |
+| HELP text | *(none)* |
 
 ## Boarding-status trust model (`app/services/status_service.py`)
 
@@ -147,20 +160,12 @@ Rationale for each choice is in that file's docstring.
   once (deduped via `push_log`) to everyone subscribed to that flight
 - Conflicting states → **disputed**, surfaced in admin, never silently overwritten
 - Exception: a bucket with ≥2 reporters AND ≥2× the rival bucket wins
-  (majority-wins); minority reports are marked disputed and their reporters'
-  contradiction counts increase
+  (majority-wins); minority reports are marked disputed
 
 ### Anti-abuse
 - Rate limit: 1 report / reporter / flight / 5 min
-- Reporter scoring: contradiction rate > 50% over ≥3 reports → **flagged**;
-  flagged reporters' reports are stored but excluded from confirmation counting
-- Reward hook: `reporter_scores.credits` + `trust_level` columns exist now so a
-  "trusted reporter" / credit system can be added without schema changes
-
-### Assumptions still needing real-world tuning
-- 30-min window + threshold 2: may need 3+ at high-traffic airports (LOS)
-- Majority-wins 2× factor: untested against real gate-chaos patterns
-- Reporter identity = WhatsApp number: SIM-swapping Sybil attacks not addressed
+- Reporter scoring: contradiction rate > 50% over ≥3 reports → **flagged**
+- Reward hook: `reporter_scores.credits` + `trust_level` columns for future use
 
 ## Tests
 
@@ -168,40 +173,29 @@ Rationale for each choice is in that file's docstring.
 cd naijafly && python -m pytest tests -v
 ```
 
-**29 passing** — covers: fare ingestion (mock + Amadeus, HTTP mocked), FX conversion,
-price-alert triggering, status parsing, confirmation/dispute/majority-wins/tie logic,
-fare-drop push worker, boarding-status push loop (incl. dedupe), anti-abuse scoring,
-emoji-template correctness (isolated + wired through the live bot router), and the
-FARE_SOURCE toggle.
+**40+ passing** — covers: fare ingestion (mock + Amadeus), FX conversion, price-alert
+triggering (date-aware), status parsing, confirmation/dispute/majority-wins, emoji
+templates, FARE_SOURCE toggle, Dana Air removal, rolling-window sampling, specific-date
+subscriptions, date-scoped queries, and command parsing with dates.
 
-> A prior version of this suite had a failing test (`test_status_aggregation`) whose
-> assertion didn't match the actual, intentional majority-wins reconciliation logic —
-> it expected *any* conflicting report to dispute everything, but the real rule (see
-> `status_service.py`) lets a clear majority stay confirmed. Fixed by replacing it with
-> three correctly-targeted tests: confirms-at-threshold, majority-wins-over-minority,
-> and genuine-tie-stays-disputed.
-
-## What's REAL vs MOCKED — current state
+## What's REAL vs MOCKED
 
 | Component | Status |
 |---|---|
-| WhatsApp inbound webhook (Twilio form → TwiML reply) | **REAL** |
-| WhatsApp outbound pushes (Twilio SDK) | **REAL**; console fallback without creds |
-| Price-drop alert worker (APScheduler, end-to-end push) | **REAL** |
+| WhatsApp inbound webhook (Twilio → TwiML reply) | **REAL** |
+| WhatsApp outbound pushes (Twilio SDK) | **REAL**; console fallback |
+| Price-drop alert worker (APScheduler, date-aware) | **REAL** |
 | Boarding-status confirm → push loop | **REAL** |
-| FX rates (open.er-api.com, keyless, DB-cached) | **REAL** with cached/default fallback |
-| Admin view (`/admin`) | **REAL** (no auth — put behind basic auth for pilot) |
-| Fare data (mock) | **REAL code**, fake prices — default |
-| Fare data (Amadeus) | **REAL** GDS integration, opt-in via `FARE_SOURCE=amadeus`; coverage gaps documented above |
-| Fare data (Google Flights) | **REAL** via fli library, opt-in via `FARE_SOURCE=google` or `hybrid`; best West African carrier coverage |
-| Emoji notification scheme | **REAL**, centralized, proposed scheme (table above) |
-| Multi-currency (NGN, GHS, XOF, SLL, GMD, LRD, GNF) | **REAL** with live rate refresh |
+| FX rates (open.er-api.com, keyless, NGN only) | **REAL** with cached fallback |
+| Admin view (`/admin`) | **REAL** (no auth — add basic auth for pilot) |
+| Fare data (mock) | **REAL** code, fake prices — default for dev |
+| Fare data (Google Flights) | **REAL** via fli library — **primary for production** |
+| Fare data (Amadeus) | **REAL** code, secondary — no NG domestic carrier coverage |
 
-## STILL not done (honest list)
+## STILL not done
 
 1. **Production WhatsApp Business API approval** — sandbox only.
 2. Admin auth (one line of basic-auth middleware before pilot).
-3. **Google Flights rate-limit hardening** — at very high poll frequencies
-   (sub-5-min) across 20+ routes, Google may rate-limit. Stagger polling if needed.
+3. **Google Flights rate-limit hardening** — at very high poll frequencies.
 4. **fli legal review** — reverse-engineered API; review Google ToS before
-   commercial deployment at scale. Consider official Google Flights API partnership.
+   commercial deployment at scale.

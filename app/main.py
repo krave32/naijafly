@@ -19,12 +19,29 @@ from app.services.bot_router import BotRouter
 from app.services.notifier import get_notifier
 from app.admin.views import render_admin
 
+def _migrate_target_date():
+    """Add target_date column to subscriptions table if it doesn't exist."""
+    from sqlalchemy import text, inspect
+    try:
+        inspector = inspect(engine)
+        columns = [c['name'] for c in inspector.get_columns('subscriptions')]
+        if 'target_date' not in columns:
+            with engine.connect() as conn:
+                conn.execute(text(
+                    'ALTER TABLE subscriptions ADD COLUMN target_date TIMESTAMP'))
+                conn.commit()
+    except Exception:
+        pass  # table may not exist yet; create_all handles that
+
+
 app = FastAPI(title="NaijaFly MVP")
 
 
 @app.on_event("startup")
 def startup():
     Base.metadata.create_all(bind=engine)
+    # Lightweight migration: add target_date column if missing
+    _migrate_target_date()
 
 
 @app.get("/health")

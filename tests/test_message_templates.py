@@ -10,14 +10,14 @@ from app.utils import notify_templates as tmpl
 
 
 def test_subscribed_reply_has_emoji():
-    msg = tmpl.subscribed_reply("LOS", "ACC", 80000)
+    msg = tmpl.subscribed_reply("LOS", "ABV", 80000)
     assert msg.startswith(tmpl.EMOJI_SUBSCRIBED)
-    assert "LOS->ACC" in msg
+    assert "LOS->ABV" in msg
     assert "80,000" in msg
 
 
 def test_subscribed_reply_no_target_price():
-    msg = tmpl.subscribed_reply("LOS", "ACC", None)
+    msg = tmpl.subscribed_reply("LOS", "ABV", None)
     assert msg.startswith(tmpl.EMOJI_SUBSCRIBED)
     assert "any price drop" in msg
 
@@ -29,15 +29,15 @@ def test_tracking_reply_has_emoji():
 
 
 def test_fare_found_reply_has_emoji():
-    msg = tmpl.fare_found_reply("LOS", "ACC", 185000, "NGN", 123.45, "Air Peace (mock)")
+    msg = tmpl.fare_found_reply("LOS", "ABV", 185000, "NGN", 123.45, "Air Peace")
     assert msg.startswith(tmpl.EMOJI_FARE_FOUND)
     assert "185,000" in msg
     assert "123.45" in msg
 
 
 def test_no_route_and_no_fare_data_share_the_no_data_emoji():
-    msg1 = tmpl.no_route_reply("LOS", "ACC")
-    msg2 = tmpl.no_fare_data_reply("LOS", "ACC")
+    msg1 = tmpl.no_route_reply("LOS", "ABV")
+    msg2 = tmpl.no_fare_data_reply("LOS", "ABV")
     assert msg1.startswith(tmpl.EMOJI_NO_DATA)
     assert msg2.startswith(tmpl.EMOJI_NO_DATA)
     # ...and are visually distinct from a found fare, so a user never
@@ -61,7 +61,7 @@ def test_rate_limited_and_unclear_replies_have_distinct_emoji():
 
 
 def test_fare_drop_push_has_emoji_distinct_from_fare_found():
-    msg = tmpl.fare_drop_push("LOS", "ACC", 70000, "NGN", 46.67, "Air Peace (mock)")
+    msg = tmpl.fare_drop_push("LOS", "ABV", 70000, "NGN", 46.67, "Air Peace")
     assert msg.startswith(tmpl.EMOJI_FARE_DROP)
     # Pushes and query replies must look different at a glance.
     assert tmpl.EMOJI_FARE_DROP != tmpl.EMOJI_FARE_FOUND

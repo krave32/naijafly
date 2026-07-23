@@ -97,29 +97,28 @@ def test_google_flights_no_results_returns_empty():
 
 
 def test_west_african_airlines_map_complete():
-    """All tracked Nigerian/West African airlines are in the attribution map."""
-    expected_codes = ["P4", "W3", "QI", "9J", "AW", "UN", "Q9"]
+    """All tracked Nigerian domestic airlines are in the attribution map."""
+    expected_codes = ["P4", "W3", "QI", "9J", "UN", "Q9", "NK", "VK", "NE"]
     for code in expected_codes:
         assert code in WEST_AFRICAN_AIRLINES, f"Missing airline IATA code: {code}"
     assert WEST_AFRICAN_AIRLINES["P4"] == "Air Peace"
     assert WEST_AFRICAN_AIRLINES["W3"] == "Arik Air"
     assert WEST_AFRICAN_AIRLINES["QI"] == "Ibom Air"
-    assert WEST_AFRICAN_AIRLINES["9J"] == "Dana Air"
-    assert WEST_AFRICAN_AIRLINES["AW"] == "Africa World Airlines"
+    assert "defunct" in WEST_AFRICAN_AIRLINES["9J"].lower()  # Dana Air (defunct)
     assert WEST_AFRICAN_AIRLINES["Q9"] == "Enugu Air"
+    assert WEST_AFRICAN_AIRLINES["NE"] == "NG Eagle"
 
 
 def test_airport_currency_map_covers_key_airports():
-    """All major Nigerian/West African airports have correct currency mapping."""
+    """All major Nigerian domestic airports have NGN currency mapping."""
     assert AIRPORT_CURRENCY["LOS"] == "NGN"
     assert AIRPORT_CURRENCY["ABV"] == "NGN"
     assert AIRPORT_CURRENCY["ENU"] == "NGN"
     assert AIRPORT_CURRENCY["BNI"] == "NGN"
     assert AIRPORT_CURRENCY["PHC"] == "NGN"
-    assert AIRPORT_CURRENCY["ACC"] == "GHS"
-    assert AIRPORT_CURRENCY["KMS"] == "GHS"
-    assert AIRPORT_CURRENCY["DKR"] == "XOF"
-    assert AIRPORT_CURRENCY["ABJ"] == "XOF"
+    assert AIRPORT_CURRENCY["KAN"] == "NGN"
+    assert AIRPORT_CURRENCY["CBQ"] == "NGN"
+    assert AIRPORT_CURRENCY["QOW"] == "NGN"
 
 
 def test_fare_source_google_toggle(monkeypatch):
@@ -147,10 +146,10 @@ def test_hybrid_ingestor_combines_sources():
 # -- Expanded mock route tests --
 
 def test_mock_expanded_routes():
-    """MockFareIngestor now covers expanded West African routes."""
+    """MockFareIngestor covers Nigeria-domestic routes (all NGN)."""
     ingestor = MockFareIngestor(seed=42)
 
-    # Nigeria domestic - new routes
+    # Nigeria domestic - Lagos hub
     enu = ingestor.fetch_fares("LOS", "ENU", datetime(2026, 8, 1))
     assert len(enu) == 2
     assert enu[0]["currency"] == "NGN"
@@ -160,23 +159,24 @@ def test_mock_expanded_routes():
     assert bni[0]["currency"] == "NGN"
 
     # Abuja routes
-    abj_los = ingestor.fetch_fares("ABV", "LOS", datetime(2026, 8, 1))
-    assert len(abj_los) == 2
+    abv_los = ingestor.fetch_fares("ABV", "LOS", datetime(2026, 8, 1))
+    assert len(abv_los) == 2
 
     # Existing routes still work
     los_abv = ingestor.fetch_fares("LOS", "ABV", datetime(2026, 8, 1))
     assert len(los_abv) == 2
 
-    # Ghana routes
-    acc_kms = ingestor.fetch_fares("ACC", "KMS", datetime(2026, 8, 1))
-    assert len(acc_kms) == 2
-    assert acc_kms[0]["currency"] == "GHS"
+    # Abuja-Kano
+    abv_kan = ingestor.fetch_fares("ABV", "KAN", datetime(2026, 8, 1))
+    assert len(abv_kan) == 2
+    assert abv_kan[0]["currency"] == "NGN"
 
 
 def test_mock_sources_include_new_airlines():
-    """Mock sources list includes Enugu Air and United Nigeria."""
+    """Mock sources list includes Nigerian domestic carriers."""
     ingestor = MockFareIngestor(seed=42)
-    fares = ingestor.fetch_fares("LOS", "ABV", datetime(2026, 8, 1))
     all_sources = ingestor.SOURCES
-    assert any("Enugu Air" in s for s in all_sources)
-    assert any("United Nigeria" in s for s in all_sources)
+    assert "United Nigeria Airlines" in all_sources
+    assert "NG Eagle" in all_sources
+    assert "Max Air" in all_sources
+    assert "Green Africa Airways" in all_sources

@@ -75,6 +75,8 @@ class UserSubscription(Base):
     route_id = Column(Integer, ForeignKey("routes.id"), nullable=True)
     flight_id = Column(Integer, ForeignKey("flights.id"), nullable=True)
     target_price = Column(Float, nullable=True)
+    # NULL = rolling window (next 30-45 days); specific date = that date only
+    target_date = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 

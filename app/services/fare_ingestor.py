@@ -1,28 +1,29 @@
 """Fare ingestion - explicit swap-in interface.
 
-To go live for a carrier, implement FareIngestor.fetch_fares() and register it
-in INGESTOR_REGISTRY. Everything downstream (price history, drop detection,
-WhatsApp pushes) is real and unchanged.
+Nigeria-domestic scope: NaijaFly tracks only Nigerian domestic routes.
+Cross-border routes (Ghana, Senegal, Côte d'Ivoire, etc.) were removed.
 
-CARRIER DATA STATUS (updated with Google Flights integration):
-  - Air Peace (P4)  : Google Flights indexes their fares. LIVE via GoogleFlightsIngestor.
-                      Amadeus GDS does NOT cover them.
-  - Dana Air (9J)   : Google Flights may index limited fares (intermittent ops). LIVE via GoogleFlightsIngestor.
-  - Ibom Air (QI)   : Google Flights may index limited fares.              LIVE via GoogleFlightsIngestor.
-  - Arik Air (W3)   : Google Flights indexes their fares.                   LIVE via GoogleFlightsIngestor.
-  - Africa World Airlines (AWA, Ghana, AW): Google Flights limited coverage. LIVE via GoogleFlightsIngestor.
-  - United Nigeria Airlines (UN)           : Google Flights may index.      LIVE via GoogleFlightsIngestor.
-  - Enugu Air (Q9)  : Google Flights limited coverage.                      LIVE via GoogleFlightsIngestor.
-  - GDS (Amadeus/Travelport): Amadeus Self-Service API has a free tier. WIRED
-    below as AmadeusFareIngestor. Covers GDS-connected carriers on international/
-    regional routes but NOT the local carriers above.
-  - Google Flights (fli): Reverse-engineered Google Flights API. Best coverage
-    for Nigerian/West African domestic carriers since Google aggregates from
-    airline websites and OTAs. WIRED below as GoogleFlightsIngestor.
+CARRIER DATA STATUS:
+  - Air Peace (P4)       : Google Flights indexes their fares. PRIMARY source.
+  - Arik Air (W3)        : Google Flights indexes their fares.
+  - Ibom Air (QI)        : Google Flights indexes limited routes.
+  - United Nigeria (UN)  : Google Flights may index.
+  - Green Africa (NK)    : Google Flights may index.
+  - ValueJet (VK)        : Google Flights may index.
+  - Overland Airways (OF): Limited Google Flights coverage.
+  - NG Eagle (NE)        : New carrier (replaced Dana Air's obligations).
+  - Max Air (MX)         : Primarily Kano hub, limited Google Flights.
+  - Umza Air (UM)        : Smaller carrier, limited coverage.
+  - Dana Air (9J)        : DEFUNCT — suspended by NCAA April 2024 after a
+                           runway incident. Operations ceased, obligations
+                           handed to NG Eagle. Kept in WEST_AFRICAN_AIRLINES
+                           as a historical reference only.
+  - Amadeus GDS          : Secondary source. Does NOT cover Nigerian domestic
+                           carriers directly. Retained for completeness but
+                           Google Flights is the meaningful real-data path.
 
-Toggle which ingestor is active at runtime with the FARE_SOURCE env var
-(mock|amadeus|google), read by get_active_ingestor(). No redeploy needed.
-Use FARE_SOURCE=hybrid to combine Google Flights + Amadeus for maximum coverage.
+Toggle which ingestor is active at runtime with FARE_SOURCE env var
+(mock|amadeus|google|hybrid). No redeploy needed.
 """
 import logging
 import os
@@ -53,39 +54,42 @@ class MockFareIngestor(FareIngestor):
     """
 
     BASE_PRICES = {
-        # Nigeria domestic - major routes
+        # Nigeria domestic - Lagos hub routes
         ("LOS", "ABV"): (85000, "NGN"),   # Lagos -> Abuja
         ("ABV", "LOS"): (82000, "NGN"),   # Abuja -> Lagos
         ("LOS", "PHC"): (78000, "NGN"),   # Lagos -> Port Harcourt
         ("PHC", "LOS"): (75000, "NGN"),   # Port Harcourt -> Lagos
         ("LOS", "ENU"): (65000, "NGN"),   # Lagos -> Enugu
         ("ENU", "LOS"): (62000, "NGN"),   # Enugu -> Lagos
-        ("LOS", "BNI"): (70000, "NGN"),   # Lagos -> Benin City (Binani)
+        ("LOS", "BNI"): (70000, "NGN"),   # Lagos -> Benin City
         ("BNI", "LOS"): (68000, "NGN"),   # Benin City -> Lagos
         ("LOS", "KAN"): (92000, "NGN"),   # Lagos -> Kano
         ("KAN", "LOS"): (90000, "NGN"),   # Kano -> Lagos
         ("LOS", "CBQ"): (72000, "NGN"),   # Lagos -> Calabar
+        ("CBQ", "LOS"): (70000, "NGN"),   # Calabar -> Lagos
+        ("LOS", "ILR"): (68000, "NGN"),   # Lagos -> Ilorin
+        ("ILR", "LOS"): (66000, "NGN"),   # Ilorin -> Lagos
+        ("LOS", "QOW"): (72000, "NGN"),   # Lagos -> Owerri
+        ("QOW", "LOS"): (70000, "NGN"),   # Owerri -> Lagos
+        # Abuja hub routes
         ("ABV", "PHC"): (88000, "NGN"),   # Abuja -> Port Harcourt
+        ("PHC", "ABV"): (86000, "NGN"),   # Port Harcourt -> Abuja
         ("ABV", "ENU"): (55000, "NGN"),   # Abuja -> Enugu
         ("ENU", "ABV"): (53000, "NGN"),   # Enugu -> Abuja
         ("ABV", "BNI"): (60000, "NGN"),   # Abuja -> Benin City
-        # Nigeria <-> Ghana
-        ("LOS", "ACC"): (185000, "NGN"),  # Lagos -> Accra
-        ("ACC", "LOS"): (2100, "GHS"),    # Accra -> Lagos
-        # Ghana domestic
-        ("ACC", "KMS"): (900, "GHS"),     # Accra -> Kumasi
-        ("KMS", "ACC"): (850, "GHS"),     # Kumasi -> Accra
-        ("ACC", "TML"): (1100, "GHS"),    # Accra -> Tamale
-        # West Africa regional
-        ("LOS", "DKR"): (250000, "NGN"),  # Lagos -> Dakar
-        ("ACC", "DKR"): (3500, "GHS"),    # Accra -> Dakar
-        ("LOS", "ABJ"): (180000, "NGN"),  # Lagos -> Abidjan
-        ("ACC", "ABJ"): (2800, "GHS"),    # Accra -> Abidjan
+        ("BNI", "ABV"): (58000, "NGN"),   # Benin City -> Abuja
+        ("ABV", "KAN"): (78000, "NGN"),   # Abuja -> Kano
+        ("KAN", "ABV"): (76000, "NGN"),   # Kano -> Abuja
+        ("ABV", "CBQ"): (82000, "NGN"),   # Abuja -> Calabar
+        ("CBQ", "ABV"): (80000, "NGN"),   # Calabar -> Abuja
+        # Secondary routes
+        ("PHC", "ENU"): (55000, "NGN"),   # Port Harcourt -> Enugu
+        ("ENU", "PHC"): (53000, "NGN"),   # Enugu -> Port Harcourt
     }
     SOURCES = [
-        "Air Peace", "Ibom Air", "Dana Air",
-        "Africa World Airlines (Ghana)", "Arik Air", "Enugu Air",
+        "Air Peace", "Arik Air", "Ibom Air",
         "United Nigeria Airlines", "ValueJet", "Green Africa Airways",
+        "Overland Airways", "NG Eagle", "Max Air",
     ]
 
     def __init__(self, jitter: float = 0.15, seed: int = None):
@@ -238,50 +242,33 @@ class AmadeusFareIngestor(FareIngestor):
 
 # -- Google Flights (fli) ingestor -----------------------------------------------
 
-# IATA codes for Nigerian/West African airlines that Google Flights may index.
-# Used by GoogleFlightsIngestor for source attribution and optional filtering.
+# Nigerian domestic airline IATA codes.
+# Used by GoogleFlightsIngestor for source attribution.
 WEST_AFRICAN_AIRLINES = {
+    # Active Nigerian domestic carriers
     "P4": "Air Peace",
     "W3": "Arik Air",
     "QI": "Ibom Air",
-    "9J": "Dana Air",
-    "AW": "Africa World Airlines",
     "UN": "United Nigeria Airlines",
-    "Q9": "Enugu Air",
-    "VK": "ValueJet",
     "NK": "Green Africa Airways",
-    "2P": "PAL Airlines (Nigeria)",
-    # Regional carriers serving West Africa
-    "ET": "Ethiopian Airlines",
-    "KQ": "Kenya Airways",
-    "AT": "Royal Air Maroc",
-    "MS": "EgyptAir",
-    "TU": "Tunisair",
-    "HF": "Air Côte d'Ivoire",
-    "SN": "Brussels Airlines",
-    "AF": "Air France",
+    "VK": "ValueJet",
+    "OF": "Overland Airways",
+    "NE": "NG Eagle",         # Replaced Dana Air (suspended NCAA April 2024)
+    "MX": "Max Air",
+    "UM": "Umza Air",
+    "Q9": "Enugu Air",
+    # Defunct — kept for historical reference only
+    "9J": "Dana Air (defunct)",  # Suspended by NCAA April 2024, ceased operations
 }
 
-# Default currency mapping per destination airport country.
-# Used when Google Flights returns prices in a different currency.
+# Currency for Nigerian domestic flights (always NGN).
+# Kept as a dict for backward compatibility with ingestor code that looks up
+# per-airport currency. All Nigerian airports use NGN.
 AIRPORT_CURRENCY = {
-    # Nigeria
     "LOS": "NGN", "ABV": "NGN", "PHC": "NGN", "ENU": "NGN",
     "BNI": "NGN", "KAN": "NGN", "CBQ": "NGN", "QOW": "NGN",
-    # Ghana
-    "ACC": "GHS", "KMS": "GHS", "TML": "GHS",
-    # Senegal
-    "DKR": "XOF",
-    # Côte d'Ivoire
-    "ABJ": "XOF",
-    # Sierra Leone
-    "FNA": "SLL",
-    # Burkina Faso
-    "OUA": "XOF",
-    # Gambia
-    "BJL": "GMD",
-    # Liberia
-    "ROB": "LRD",
+    "ILR": "NGN", "AKR": "NGN", "MIU": "NGN", "YOL": "NGN",
+    "SKO": "NGN", "QUO": "NGN",
 }
 
 

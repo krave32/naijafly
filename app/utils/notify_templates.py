@@ -69,9 +69,11 @@ STATUS_PUSH_EMOJI = {
 }
 
 
-def subscribed_reply(origin: str, destination: str, target: float | None) -> str:
+def subscribed_reply(origin: str, destination: str, target: float | None,
+                      date_label: str = "next 30 days") -> str:
     tgt = f" below {target:,.0f}" if target else " on any price drop"
-    return f"{EMOJI_SUBSCRIBED} Subscribed: {origin}->{destination}. You'll get alerts{tgt}."
+    return (f"{EMOJI_SUBSCRIBED} Subscribed: {origin}->{destination} "
+            f"({date_label}). You'll get alerts{tgt}.")
 
 
 def tracking_reply(flight_number: str) -> str:
@@ -81,8 +83,9 @@ def tracking_reply(flight_number: str) -> str:
 
 
 def fare_found_reply(origin: str, destination: str, price_local: float,
-                     currency_local: str, price_usd: float, source: str) -> str:
-    return (f"{EMOJI_FARE_FOUND} Cheapest {origin}->{destination}: "
+                     currency_local: str, price_usd: float, source: str,
+                     date_label: str = "next 30 days") -> str:
+    return (f"{EMOJI_FARE_FOUND} Cheapest {origin}->{destination} ({date_label}): "
             f"{price_local:,.0f} {currency_local} (~${price_usd:,.2f} USD) on {source}")
 
 
@@ -112,8 +115,9 @@ def unclear_report_reply() -> str:
 
 
 def fare_drop_push(origin: str, destination: str, price: float, currency: str,
-                   usd: float, source: str) -> str:
-    return (f"{EMOJI_FARE_DROP} [NaijaFly] Price drop {origin}->{destination}: "
+                   usd: float, source: str, date_label: str = "") -> str:
+    date_part = f" ({date_label})" if date_label else ""
+    return (f"{EMOJI_FARE_DROP} [NaijaFly] Price drop {origin}->{destination}{date_part}: "
             f"{price:,.0f} {currency} (~${usd:,.2f} USD) on {source}.")
 
 

@@ -35,14 +35,14 @@ def _router():
 
 def test_subscribe_reply_has_emoji():
     router, _ = _router()
-    reply = router.handle("+2348000000001", "SUBSCRIBE LOS ACC 80000")
+    reply = router.handle("+2348000000001", "SUBSCRIBE LOS ABV 80000")
     assert reply.startswith(tmpl.EMOJI_SUBSCRIBED)
 
 
 def test_fare_query_no_data_has_emoji():
     router, _ = _router()
-    router.handle("+2348000000001", "SUBSCRIBE LOS ACC")
-    reply = router.handle("+2348000000001", "FARE LOS ACC")
+    router.handle("+2348000000001", "SUBSCRIBE LOS ABV")
+    reply = router.handle("+2348000000001", "FARE LOS ABV")
     # No fares ingested in this test (worker never ran), so this hits the
     # "no fare data yet" branch.
     assert reply.startswith(tmpl.EMOJI_NO_DATA)

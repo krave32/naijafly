@@ -43,7 +43,7 @@ def test_amadeus_fetch_fares_success(mock_post, mock_get):
     })
 
     ingestor = AmadeusFareIngestor(api_key="x", api_secret="y")
-    fares = ingestor.fetch_fares("LOS", "ACC", datetime(2026, 8, 1))
+    fares = ingestor.fetch_fares("LOS", "ABV", datetime(2026, 8, 1))
 
     assert len(fares) == 2
     assert fares[0]["price"] == 123456.78
@@ -51,7 +51,7 @@ def test_amadeus_fetch_fares_success(mock_post, mock_get):
     assert "Amadeus" in fares[0]["source"]
     assert "KQ" in fares[0]["source"]
     # Token should be cached, not re-fetched on a second call this session
-    ingestor.fetch_fares("LOS", "ACC", datetime(2026, 8, 1))
+    ingestor.fetch_fares("LOS", "ABV", datetime(2026, 8, 1))
     assert mock_post.call_count == 1
 
 
@@ -73,13 +73,13 @@ def test_amadeus_auth_failure_returns_empty_list_not_exception(mock_post):
     mock_post.side_effect = Exception("network down")
 
     ingestor = AmadeusFareIngestor(api_key="x", api_secret="y")
-    fares = ingestor.fetch_fares("LOS", "ACC", datetime(2026, 8, 1))
+    fares = ingestor.fetch_fares("LOS", "ABV", datetime(2026, 8, 1))
     assert fares == []  # must degrade gracefully, never crash the worker cycle
 
 
 def test_amadeus_missing_credentials_returns_empty_list():
     ingestor = AmadeusFareIngestor(api_key=None, api_secret=None)
-    fares = ingestor.fetch_fares("LOS", "ACC", datetime(2026, 8, 1))
+    fares = ingestor.fetch_fares("LOS", "ABV", datetime(2026, 8, 1))
     assert fares == []
 
 
@@ -97,7 +97,7 @@ def test_amadeus_skips_malformed_offer_without_failing_batch(mock_post, mock_get
     })
 
     ingestor = AmadeusFareIngestor(api_key="x", api_secret="y")
-    fares = ingestor.fetch_fares("LOS", "ACC", datetime(2026, 8, 1))
+    fares = ingestor.fetch_fares("LOS", "ABV", datetime(2026, 8, 1))
     assert len(fares) == 1
     assert fares[0]["price"] == 99000.00
 
