@@ -24,7 +24,7 @@ from sqlalchemy.orm import Session
 
 logger = logging.getLogger("araha.bot_router")
 
-from app.models.models import Route, Flight, UserSubscription, StatusType
+from app.models.models import Route, Flight, UserSubscription, StatusType, SeenUser
 from app.services.fare_service import FareService
 from app.services.status_service import StatusAggregationService
 from app.utils.parser import MessageParser
@@ -90,6 +90,16 @@ class BotRouter:
         parts = text.split()
         cmd = parts[0].upper()
 
+        # ── 0. Greeting keywords (HI/HELLO/START/MENU) — any user ──────
+        if cmd in tmpl.GREETING_KEYWORDS:
+            self._mark_user_seen(user_id)
+            return tmpl.welcome_intro()
+
+        # Capture new-user status BEFORE marking as seen, so the fallback
+        # at step 5 can still show the intro if needed.
+        is_new = self._is_new_user(user_id)
+        self._mark_user_seen(user_id)
+
         # ── 1. Explicit commands (backward compatible) ────────────────
         if cmd == "HELP":
             return HELP_TEXT
@@ -122,7 +132,10 @@ class BotRouter:
         if status_reply != HELP_TEXT:
             return status_reply
 
-        # ── 5. Friendly fallback ──────────────────────────────────────
+        # ── 5. First-contact or friendly fallback ──────────────────
+        if is_new:
+            return tmpl.welcome_intro()
+
         return (
             "I didn't quite catch that. You can ask me things like:\n"
             '  "cheap flights from Lagos to Abuja"\n'
@@ -448,3 +461,18 @@ class BotRouter:
         flight = self.db.query(Flight).get(sub.flight_id)
         return tmpl.report_logged_reply(
             status_type.value, gate, flight.flight_number)
+
+    # ---- first-contact detection ----
+
+    def _is_new_user(self, user_id: str) -> bool:
+        """Check if this WhatsApp number has never been seen before."""
+        return not self.db.query(SeenUser).filter_by(user_id=user_id).first()
+
+    def _mark_user_seen(self, user_id: str) -> None:
+        """Record that we've processed a message from this user."""
+        if not self.db.query(SeenUser).filter_by(user_id=user_id).first():
+            self.db.add(SeenUser(user_id=user_id))
+            try:
+                self.db.commit()
+            except IntegrityError:
+                self.db.rollback()

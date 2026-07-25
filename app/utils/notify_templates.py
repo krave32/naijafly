@@ -55,6 +55,10 @@ EMOJI_NO_DATA = "🔎"
 EMOJI_REPORT_LOGGED = "📝"
 EMOJI_RATE_LIMITED = "⏳"
 EMOJI_UNCLEAR = "❓"
+EMOJI_WELCOME = "👋"
+
+# Keywords that trigger the welcome intro on-demand (any user, new or returning)
+GREETING_KEYWORDS = {"HI", "HELLO", "START", "MENU"}
 
 # ---- pushes (FareService / StatusAggregationService) ----
 
@@ -112,6 +116,26 @@ def rate_limited_reply() -> str:
 def unclear_report_reply() -> str:
     return (f"{EMOJI_UNCLEAR} Didn't catch that. Report like: 'boarding now gate 12', "
             f"'2hr delay announced', 'gate changed to B3'. Or HELP for commands.")
+
+
+def welcome_intro() -> str:
+    """First-contact onboarding message for new users.
+
+    Also triggered on-demand via HI/HELLO/START/MENU from any user.
+    Kept shorter and friendlier than HELP_TEXT — this is the warm first
+    impression, not the exhaustive reference.
+    """
+    return (
+        f"{EMOJI_WELCOME} Welcome to Araha!\n\n"
+        "I track Nigerian domestic flights and send you:\n"
+        "  • Fare-drop alerts when prices fall on your route\n"
+        "  • Live boarding, gate & delay updates from other passengers\n\n"
+        "Try:\n"
+        '  "cheap flights from Lagos to Abuja"\n'
+        "  SUBSCRIBE LOS ABV 80000\n"
+        "  TRACK P47123 2026-07-25\n\n"
+        "Type HELP anytime for the full command list."
+    )
 
 
 def fare_drop_push(origin: str, destination: str, price: float, currency: str,

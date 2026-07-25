@@ -114,6 +114,18 @@ class ReporterScore(Base):
         return (self.contradicted_reports or 0) / self.total_reports
 
 
+class SeenUser(Base):
+    """Tracks first-contact status per WhatsApp number.
+
+    A row exists if we've ever processed a message from this user_id.
+    Used by BotRouter to decide whether to show the welcome intro.
+    """
+    __tablename__ = "seen_users"
+    id = Column(Integer, primary_key=True)
+    user_id = Column(String, unique=True, index=True)  # WhatsApp number
+    first_seen_at = Column(DateTime, default=datetime.utcnow)
+
+
 class PushLog(Base):
     """Dedupe layer: remembers which (flight, status, gate) state was already
     pushed so a Confirmed state is broadcast exactly once."""
