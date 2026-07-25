@@ -560,3 +560,86 @@ class TestConversationalTrack:
     def test_explicit_track_still_works(self, router):
         reply = router.handle("user1", "TRACK P47123 2026-08-15")
         assert "Tracking" in reply or "P47123" in reply
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# SECTION 12: Conversation State (follow-up question resolution)
+# ═══════════════════════════════════════════════════════════════════════
+
+class TestConversationState:
+    @pytest.fixture
+    def router(self):
+        from app.services.bot_router import BotRouter
+        from app.services import bot_router as br_module
+        from sqlalchemy import create_engine
+        from sqlalchemy.orm import sessionmaker
+        from app.models.models import Base
+        engine = create_engine("sqlite:///:memory:")
+        Base.metadata.create_all(engine)
+        Session = sessionmaker(bind=engine)
+        db = Session()
+        # Clear pending state between tests
+        br_module._pending.clear()
+        return BotRouter(db)
+
+    def test_fare_follow_up_resolves_origin(self, router):
+        """Bot asks 'where from?', user replies with city → fare result."""
+        # Step 1: user asks about a destination only
+        reply1 = router.handle("user1", "how much to fly to Abuja?")
+        assert "Where are you flying from" in reply1
+
+        # Step 2: user replies with origin city
+        reply2 = router.handle("user1", "Lagos")
+        # Should either show a fare or say no data yet (route was just created)
+        assert "LOS" in reply2 or "Lagos" in reply2.lower() or "ABV" in reply2 or "No" in reply2
+
+    def test_subscribe_follow_up_resolves_origin(self, router):
+        """Bot asks 'where from?', user replies with city → subscribe."""
+        reply1 = router.handle("user1", "alert me when prices drop for Port Harcourt")
+        assert "Where are you flying from" in reply1
+
+        reply2 = router.handle("user1", "Lagos")
+        assert "Subscribed" in reply2 or "LOS" in reply2
+
+    def test_pending_state_cleared_after_resolution(self, router):
+        """After resolving, the pending state is removed."""
+        from app.services import bot_router as br_module
+        router.handle("user1", "how much to fly to Abuja?")
+        assert "user1" in br_module._pending
+
+        router.handle("user1", "Lagos")
+        assert "user1" not in br_module._pending
+
+    def test_pending_expired_ignored(self, router):
+        """Pending question older than 5 minutes is ignored."""
+        from app.services import bot_router as br_module
+        from datetime import datetime, timedelta
+
+        router.handle("user1", "how much to fly to Abuja?")
+        # Manually age the pending entry
+        br_module._pending["user1"]["created_at"] = datetime.utcnow() - timedelta(minutes=10)
+
+        reply = router.handle("user1", "Lagos")
+        # Should not resolve as a fare query — falls through to fallback
+        assert "Where are you flying from" not in reply
+
+    def test_unknown_city_gets_helpful_reply(self, router):
+        """If the follow-up reply isn't a recognized city, show suggestions."""
+        router.handle("user1", "how much to fly to Abuja?")
+        reply = router.handle("user1", "London")
+        assert "didn't recognize" in reply.lower() or "Try one of" in reply
+
+    def test_new_intent_overrides_pending(self, router):
+        """If user sends a full new intent while pending, the new intent wins."""
+        router.handle("user1", "how much to fly to Abuja?")
+        # Instead of answering the question, user sends a complete new query
+        reply = router.handle("user1", "cheap flights from Lagos to Kano")
+        # Should handle the new intent, not the pending one
+        assert "LOS" in reply or "KAN" in reply or "No" in reply
+
+    def test_explicit_command_ignores_pending(self, router):
+        """HELP command bypasses any pending question."""
+        router.handle("user1", "how much to fly to Abuja?")
+        reply = router.handle("user1", "HELP")
+        assert "Araha" in reply
+

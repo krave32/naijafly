@@ -28,7 +28,7 @@ from app.models.models import Route, Flight, UserSubscription, StatusType
 from app.services.fare_service import FareService
 from app.services.status_service import StatusAggregationService
 from app.utils.parser import MessageParser
-from app.utils.intent_parser import parse_intent, Intent
+from app.utils.intent_parser import parse_intent, Intent, resolve_iata
 from app.utils.llm_parser import parse_with_llm
 from app.utils import notify_templates as tmpl
 
@@ -48,6 +48,11 @@ HELP_TEXT = (
 
 # Rolling window for fare queries when no specific date given
 FARE_WINDOW_DAYS = 30
+
+# Conversation state: pending follow-up questions per user
+# Structure: {user_id: {"action": str, "intent": Intent, "created_at": datetime}}
+# Cleared when resolved, expired after 5 minutes, or overridden by a new intent.
+_pending: dict[str, dict] = {}
 
 
 def _try_parse_date(text: str) -> datetime | None:
@@ -96,6 +101,11 @@ class BotRouter:
             date_str = parts[2] if len(parts) > 2 else None
             return self._track_flight(user_id, parts[1], date_str)
 
+        # ── 1b. Resolve pending follow-up question ────────────────────
+        resolved = self._try_resolve_pending(user_id, text)
+        if resolved is not None:
+            return resolved
+
         # ── 2. Pattern matcher (instant, free) ────────────────────────
         intent = parse_intent(text)
         if intent.confidence >= 0.4:
@@ -129,7 +139,7 @@ class BotRouter:
             return HELP_TEXT
 
         if intent.action == "fare_query":
-            return self._handle_natural_fare(intent)
+            return self._handle_natural_fare(user_id, intent)
 
         if intent.action == "subscribe":
             return self._handle_natural_subscribe(user_id, intent)
@@ -140,10 +150,59 @@ class BotRouter:
         # Unknown intent — shouldn't happen given confidence check
         return HELP_TEXT
 
-    def _handle_natural_fare(self, intent: Intent) -> str:
+    def _try_resolve_pending(self, user_id: str, text: str) -> str | None:
+        """Resolve a pending follow-up question if the user's reply matches.
+
+        Returns the reply text, or None if no pending question or can't resolve.
+        Only resolves short city-name replies; lets full new intents pass through.
+        """
+        if user_id not in _pending:
+            return None
+
+        pending = _pending[user_id]
+
+        # Expire after 5 minutes
+        if datetime.utcnow() - pending["created_at"] > timedelta(minutes=5):
+            del _pending[user_id]
+            return None
+
+        # If the reply is a full sentence (>3 words), it's likely a new intent —
+        # clear pending and let it fall through to the normal parser.
+        if len(text.split()) > 3:
+            del _pending[user_id]
+            return None
+
+        del _pending[user_id]
+        action = pending["action"]
+        intent: Intent = pending["intent"]
+
+        # Try to extract a city from the reply
+        city = resolve_iata(text.strip())
+        if not city:
+            return (
+                f"I didn't recognize that city. Try one of: "
+                f"Lagos, Abuja, Port Harcourt, Kano, Enugu, "
+                f"Calabar, Benin, Kaduna, Ilorin, Owerri."
+            )
+
+        if action == "fare_query":
+            intent.origin = city
+            return self._handle_natural_fare(user_id, intent)
+
+        elif action == "subscribe":
+            intent.origin = city
+            return self._handle_natural_subscribe(user_id, intent)
+
+        return None
+
+    def _handle_natural_fare(self, user_id: str, intent: Intent) -> str:
         """Handle a fare_query intent from natural language."""
         if not intent.is_complete_route():
             if intent.destination and not intent.origin:
+                _pending[user_id] = {
+                    "action": "fare_query", "intent": intent,
+                    "created_at": datetime.utcnow(),
+                }
                 return (
                     f"I can check fares to {intent.destination}. "
                     f"Where are you flying from? "
@@ -181,6 +240,10 @@ class BotRouter:
         """Handle a subscribe intent from natural language."""
         if not intent.is_complete_route():
             if intent.destination and not intent.origin:
+                _pending[user_id] = {
+                    "action": "subscribe", "intent": intent,
+                    "created_at": datetime.utcnow(),
+                }
                 return (
                     f"I'll watch prices to {intent.destination} for you. "
                     f"Where are you flying from? "
