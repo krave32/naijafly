@@ -117,7 +117,7 @@ def unclear_report_reply() -> str:
 def fare_drop_push(origin: str, destination: str, price: float, currency: str,
                    usd: float, source: str, date_label: str = "") -> str:
     date_part = f" ({date_label})" if date_label else ""
-    return (f"{EMOJI_FARE_DROP} [NaijaFly] Price drop {origin}->{destination}{date_part}: "
+    return (f"{EMOJI_FARE_DROP} [Araha] Price drop {origin}->{destination}{date_part}: "
             f"{price:,.0f} {currency} (~${usd:,.2f} USD) on {source}.")
 
 
@@ -130,5 +130,5 @@ def status_confirmed_push(flight_number: str, status_type: StatusType, gate: str
         StatusType.NOT_BOARDING: "NOT boarding yet",
         StatusType.OTHER: "Status update",
     }[status_type]
-    return (f"{emoji} [NaijaFly] {flight_number}: {label}. "
+    return (f"{emoji} [Araha] {flight_number}: {label}. "
             f"Confirmed by 2+ passengers at the airport.")

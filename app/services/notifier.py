@@ -15,7 +15,7 @@ locally. Nothing else in the codebase knows or cares which mode is active.
 import logging
 import os
 
-logger = logging.getLogger("naijafly.notifier")
+logger = logging.getLogger("araha.notifier")
 logging.basicConfig(level=logging.INFO)
 
 

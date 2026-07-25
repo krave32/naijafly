@@ -1,7 +1,7 @@
 import os
 import sys
 
-# Add the current directory (naijafly root) to sys.path
+# Add the current directory (araha root) to sys.path
 sys.path.append(os.path.abspath(os.getcwd()))
 
 from app.utils.parser import MessageParser

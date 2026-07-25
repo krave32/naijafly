@@ -1,6 +1,6 @@
 """Fare ingestion - explicit swap-in interface.
 
-Nigeria-domestic scope: NaijaFly tracks only Nigerian domestic routes.
+Nigeria-domestic scope: Araha tracks only Nigerian domestic routes.
 Cross-border routes (Ghana, Senegal, Côte d'Ivoire, etc.) were removed.
 
 CARRIER DATA STATUS:
@@ -35,7 +35,7 @@ from typing import Dict, List
 
 import requests
 
-logger = logging.getLogger("naijafly.fare_ingestor")
+logger = logging.getLogger("araha.fare_ingestor")
 
 
 class FareIngestor(ABC):

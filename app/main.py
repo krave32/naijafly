@@ -1,4 +1,4 @@
-"""NaijaFly API.
+"""Araha API.
 
 Endpoints:
   POST /webhook/whatsapp  - Twilio inbound webhook (form-encoded: From, Body).
@@ -34,7 +34,7 @@ def _migrate_target_date():
         pass  # table may not exist yet; create_all handles that
 
 
-app = FastAPI(title="NaijaFly MVP")
+app = FastAPI(title="Araha MVP")
 
 
 @app.on_event("startup")

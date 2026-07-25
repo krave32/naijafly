@@ -32,7 +32,7 @@ load_dotenv()
 from apscheduler.schedulers.blocking import BlockingScheduler
 
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("naijafly.fare_worker")
+logger = logging.getLogger("araha.fare_worker")
 
 POLL_MINUTES = int(os.getenv("FARE_POLL_MINUTES", "5"))
 FARE_WINDOW_DAYS = int(os.getenv("FARE_WINDOW_DAYS", "30"))

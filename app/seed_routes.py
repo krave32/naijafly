@@ -9,11 +9,11 @@ Usage:
 """
 import logging
 
-logger = logging.getLogger("naijafly.seed")
+logger = logging.getLogger("araha.seed")
 
 # Nigeria-domestic routes only. Each tuple is (origin, destination) using
 # IATA airport codes. Cross-border routes (Ghana, Senegal, Côte d'Ivoire,
-# etc.) were removed — NaijaFly now focuses exclusively on Nigerian domestic
+# etc.) were removed — Araha now focuses exclusively on Nigerian domestic
 # flights served by Air Peace, Arik Air, Ibom Air, United Nigeria Airlines,
 # Green Africa Airways, ValueJet, and other Nigerian carriers.
 NIGERIA_DOMESTIC_ROUTES = [

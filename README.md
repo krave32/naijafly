@@ -1,4 +1,4 @@
-# NaijaFly — Nigeria Flight Fare Tracker + Crowdsourced Boarding Status
+# Araha — Nigeria Flight Fare Tracker + Crowdsourced Boarding Status
 
 WhatsApp-first fare alerts and passenger-reported flight status for **Nigerian domestic routes**.
 The full loop is real end-to-end: **a message in triggers a reply, a status escalation
@@ -6,11 +6,11 @@ triggers a push, a fare drop triggers a push.**
 
 ## Scope
 
-NaijaFly tracks **Nigeria-domestic flights only** — all routes are between Nigerian
+Araha tracks **Nigeria-domestic flights only** — all routes are between Nigerian
 airports (LOS, ABV, PHC, ENU, BNI, KAN, CBQ, ILR, QOW, AKR). All fares are in NGN.
 
 **Why not West Africa-wide?** Cross-border routes (Accra, Dakar, Abidjan, Freetown)
-were removed to focus on the market where NaijaFly has the strongest carrier coverage
+were removed to focus on the market where Araha has the strongest carrier coverage
 and the highest demand. Cross-border routes also required multi-currency handling
 (GHS, XOF, SLL) that added complexity without proportional value.
 
@@ -170,7 +170,7 @@ Toggle with the `FARE_SOURCE` env var — `mock` (default), `google`, `amadeus`,
 ## Tests
 
 ```bash
-cd naijafly && python -m pytest tests -v
+cd araha && python -m pytest tests -v
 ```
 
 **40+ passing** — covers: fare ingestion (mock + Amadeus), FX conversion, price-alert

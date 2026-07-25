@@ -18,7 +18,7 @@ from datetime import datetime, timedelta
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-logger = logging.getLogger("naijafly.bot_router")
+logger = logging.getLogger("araha.bot_router")
 
 from app.models.models import Route, Flight, UserSubscription, StatusType
 from app.services.fare_service import FareService
@@ -27,7 +27,7 @@ from app.utils.parser import MessageParser
 from app.utils import notify_templates as tmpl
 
 HELP_TEXT = (
-    "NaijaFly commands:\n"
+    "Araha commands:\n"
     "SUBSCRIBE <FROM> <TO> [target price] - fare drop alerts, next 30 days\n"
     "  e.g. SUBSCRIBE LOS ABV 80000\n"
     "SUBSCRIBE <FROM> <TO> <YYYY-MM-DD> [target price] - specific date only\n"

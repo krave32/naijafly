@@ -1,7 +1,7 @@
 """Tests for GoogleFlightsIngestor and HybridIngestor.
 
 All fli library calls are mocked - these tests never hit the real Google Flights API.
-Tests validate the integration layer: correct mapping from fli results to NaijaFly
+Tests validate the integration layer: correct mapping from fli results to Araha
 fare dicts, graceful degradation when fli is missing or fails, and the WEST_AFRICAN_AIRLINES
 attribution map.
 """
@@ -42,7 +42,7 @@ def _mock_search_results(flights):
 
 @patch.dict("sys.modules", {"fli": MagicMock(), "fli.models": MagicMock(), "fli.search": MagicMock()})
 def test_google_flights_success():
-    """Google Flights returns fares -> mapped correctly to NaijaFly format."""
+    """Google Flights returns fares -> mapped correctly to Araha format."""
     mock_flight1 = _mock_flight(85000.0, "P4")
     mock_flight2 = _mock_flight(92000.0, "W3")
 

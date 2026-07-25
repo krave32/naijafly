@@ -56,8 +56,8 @@ def render_admin(db: Session) -> str:
         f = db.query(Flight).get(fid) if fid else None
         return f.flight_number if f else "-"
 
-    html = "<html><head><title>NaijaFly Admin</title>" + STYLE + "</head><body>"
-    html += "<h1>NaijaFly Admin</h1>"
+    html = "<html><head><title>Araha Admin</title>" + STYLE + "</head><body>"
+    html += "<h1>Araha Admin</h1>"
 
     html += _table("Tracked routes", ["ID", "Origin", "Destination"], _rows(
         routes, {"a": lambda r: r.id, "b": lambda r: r.origin, "c": lambda r: r.destination}))
