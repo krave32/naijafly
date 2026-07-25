@@ -67,6 +67,7 @@ class Intent:
     destination: Optional[str] = None  # IATA code
     date: Optional[datetime] = None
     target_price: Optional[float] = None
+    flight_number: Optional[str] = None  # e.g. "P47123"
     confidence: float = 0.0            # 0.0–1.0
     raw_text: str = ""
 
@@ -94,6 +95,9 @@ def parse_intent(text: str) -> Intent:
     # ── Detect intent keyword ──────────────────────────────────────────
     action = _detect_action(lower)
 
+    # ── Extract flight number (for track intents) ───────────────────────
+    flight_number = _extract_flight_number(lower) if action == "track" else None
+
     # ── Extract cities ─────────────────────────────────────────────────
     origin, destination = _extract_cities(lower)
 
@@ -104,10 +108,10 @@ def parse_intent(text: str) -> Intent:
     target_price = _extract_price(lower)
 
     # ── Score confidence ───────────────────────────────────────────────
-    confidence = _score_confidence(action, origin, destination)
+    confidence = _score_confidence(action, origin, destination, flight_number)
 
     # If we got nothing useful, return empty intent (triggers fallback)
-    if action is None and origin is None and destination is None:
+    if action is None and origin is None and destination is None and flight_number is None:
         return Intent(action=None, confidence=0.0, raw_text=raw)
 
     return Intent(
@@ -116,6 +120,7 @@ def parse_intent(text: str) -> Intent:
         destination=destination,
         date=date,
         target_price=target_price,
+        flight_number=flight_number,
         confidence=confidence,
         raw_text=raw,
     )
@@ -150,6 +155,22 @@ def _detect_action(text: str) -> Optional[str]:
     for pat in subscribe_patterns:
         if re.search(pat, text):
             return "subscribe"
+
+    # Track / status patterns
+    track_patterns = [
+        r"\btrack\s*(flight|number|#)?\b",
+        r"\bfollow\s*(flight|number|#)?\b",
+        r"\bi'?m\s*on\s*(flight\s*)?",
+        r"\bmy\s*flight\b",
+        r"\bstatus\s*(of|for)?\b",
+        r"\bflight\s*(status|update|info|updates|progress)\b",
+        r"\bboarding\s*(status|update|info)\b",
+        r"\bis\s*(my\s*)?(the\s*)?flight\b",
+        r"\bwhen.*(my\s*)?(the\s*)?flight\b",
+    ]
+    for pat in track_patterns:
+        if re.search(pat, text):
+            return "track"
 
     # Fare query patterns
     fare_patterns = [
@@ -321,7 +342,7 @@ def _extract_price(text: str) -> Optional[float]:
     return None
 
 
-def _score_confidence(action, origin, destination) -> float:
+def _score_confidence(action, origin, destination, flight_number=None) -> float:
     """Score how confident we are in this parse (0.0–1.0)."""
     score = 0.0
     if action:
@@ -330,7 +351,28 @@ def _score_confidence(action, origin, destination) -> float:
         score += 0.4
     elif origin or destination:
         score += 0.2
+    if flight_number:
+        score += 0.3  # flight number is a strong signal for track intent
     return min(score, 1.0)
+
+
+def _extract_flight_number(text: str) -> Optional[str]:
+    """Extract a flight number from text.
+
+    Handles: P47123, P4-7123, VK123, NE-456, 7123 (bare number near 'flight')
+    """
+    # Standard IATA+number: P47123, VK123, NE456
+    # Also handles hyphenated: P4-7123, VK-123 (optional hyphen in middle)
+    m = re.search(r"\b([a-zA-Z]{1,2}[a-zA-Z0-9]?)-?(\d{2,5})\b", text)
+    if m:
+        return (m.group(1) + m.group(2)).upper()
+
+    # "flight 7123" or "#7123"
+    m = re.search(r"(?:flight|#)\s*(\d{2,5})\b", text)
+    if m:
+        return m.group(1)
+
+    return None
 
 
 def resolve_iata(name: str) -> Optional[str]:

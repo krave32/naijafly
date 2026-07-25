@@ -92,7 +92,7 @@ class BotRouter:
             return self._handle_subscribe(user_id, parts[1:])
         if cmd == "FARE" and len(parts) >= 3:
             return self._handle_fare(parts[1:])
-        if cmd == "TRACK" and len(parts) >= 2:
+        if cmd == "TRACK" and len(parts) >= 2 and any(c.isdigit() for c in parts[1]):
             date_str = parts[2] if len(parts) > 2 else None
             return self._track_flight(user_id, parts[1], date_str)
 
@@ -133,6 +133,9 @@ class BotRouter:
 
         if intent.action == "subscribe":
             return self._handle_natural_subscribe(user_id, intent)
+
+        if intent.action == "track":
+            return self._handle_natural_track(user_id, intent)
 
         # Unknown intent — shouldn't happen given confidence check
         return HELP_TEXT
@@ -190,6 +193,16 @@ class BotRouter:
 
         route = self._get_or_create_route(intent.origin, intent.destination)
         return self._do_subscribe(route, intent.date, intent.target_price, user_id)
+
+    def _handle_natural_track(self, user_id: str, intent: Intent) -> str:
+        """Handle a track intent from natural language."""
+        if not intent.flight_number:
+            return (
+                "Which flight? Give me the flight number, e.g. "
+                '"track P47123" or "I\'m on flight VK201".'
+            )
+        date_str = intent.date.strftime("%Y-%m-%d") if intent.date else None
+        return self._track_flight(user_id, intent.flight_number, date_str)
 
     def _do_subscribe(self, route, target_date, target_price,
                       user_id: str = "") -> str:

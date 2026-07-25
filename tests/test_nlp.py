@@ -430,3 +430,133 @@ class TestHybridRouterRouting:
         """When LLM is disabled and pattern doesn't match, get friendly fallback."""
         reply = router.handle("user1", "some weird phrase that means nothing")
         assert "I didn't quite catch that" in reply or "Araha" in reply
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# SECTION 9: Track Intent + Flight Number Extraction
+# ═══════════════════════════════════════════════════════════════════════
+
+class TestTrackIntent:
+    def test_track_action_detected(self):
+        assert _detect_action("track flight P47123") == "track"
+        assert _detect_action("follow my flight") == "track"
+        assert _detect_action("i'm on flight VK201") == "track"
+        assert _detect_action("status of my flight") == "track"
+        assert _detect_action("flight update P47123") == "track"
+        assert _detect_action("boarding status for P47123") == "track"
+
+    def test_flight_number_extraction(self):
+        from app.utils.intent_parser import _extract_flight_number
+        assert _extract_flight_number("track P47123") == "P47123"
+        assert _extract_flight_number("I'm on flight VK201") == "VK201"
+        assert _extract_flight_number("follow NE456") == "NE456"
+        assert _extract_flight_number("P4-7123") == "P47123"
+        assert _extract_flight_number("flight 7123") == "7123"
+        assert _extract_flight_number("#4521") == "4521"
+
+    def test_no_flight_number(self):
+        from app.utils.intent_parser import _extract_flight_number
+        assert _extract_flight_number("track my flight") is None
+        assert _extract_flight_number("hello") is None
+
+    def test_full_track_intent(self):
+        intent = parse_intent("I'm on flight P47123 tomorrow")
+        assert intent.action == "track"
+        assert intent.flight_number == "P47123"
+        assert intent.date is not None
+        assert intent.confidence >= 0.4
+
+    def test_track_without_date(self):
+        intent = parse_intent("track VK201")
+        assert intent.action == "track"
+        assert intent.flight_number == "VK201"
+        assert intent.confidence >= 0.4
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# SECTION 10: Expanded Status Report Patterns
+# ═══════════════════════════════════════════════════════════════════════
+
+class TestExpandedStatusReports:
+    def test_boarding_variants(self):
+        from app.utils.parser import MessageParser
+        from app.models.models import StatusType
+        s, _ = MessageParser.parse("they're boarding now at gate 12")
+        assert s == StatusType.BOARDING
+        s, _ = MessageParser.parse("boarding announced for gate B3")
+        assert s == StatusType.BOARDING
+        s, _ = MessageParser.parse("we are boarding")
+        assert s == StatusType.BOARDING
+
+    def test_not_boarding_variants(self):
+        from app.utils.parser import MessageParser
+        from app.models.models import StatusType
+        s, _ = MessageParser.parse("still waiting to board")
+        assert s == StatusType.NOT_BOARDING
+        s, _ = MessageParser.parse("no movement at gate 5")
+        assert s == StatusType.NOT_BOARDING
+        s, _ = MessageParser.parse("haven't started boarding yet")
+        assert s == StatusType.NOT_BOARDING
+
+    def test_delay_variants(self):
+        from app.utils.parser import MessageParser
+        from app.models.models import StatusType
+        s, _ = MessageParser.parse("running late by 2 hours")
+        assert s == StatusType.DELAY
+        s, _ = MessageParser.parse("30 minutes late")
+        assert s == StatusType.DELAY
+        s, _ = MessageParser.parse("held up on the tarmac")
+        assert s == StatusType.DELAY
+
+    def test_gate_change_variants(self):
+        from app.utils.parser import MessageParser
+        from app.models.models import StatusType
+        s, g = MessageParser.parse("gate changed to E5")
+        assert s == StatusType.GATE_CHANGE
+        assert g == "E5"
+        s, g = MessageParser.parse("new gate is B3")
+        assert s == StatusType.GATE_CHANGE
+        assert g == "B3"
+        s, g = MessageParser.parse("go to gate 12")
+        assert s == StatusType.GATE_CHANGE
+        assert g == "12"
+
+    def test_gate_extraction_flexible(self):
+        from app.utils.parser import MessageParser
+        _, g = MessageParser.parse("boarding at gate 12")
+        assert g == "12"
+        _, g = MessageParser.parse("now at E5")
+        assert g == "E5"
+        _, g = MessageParser.parse("gate is now B7")
+        assert g == "B7"
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# SECTION 11: Conversational Track via Router
+# ═══════════════════════════════════════════════════════════════════════
+
+class TestConversationalTrack:
+    @pytest.fixture
+    def router(self):
+        from app.services.bot_router import BotRouter
+        from sqlalchemy import create_engine
+        from sqlalchemy.orm import sessionmaker
+        from app.models.models import Base
+        engine = create_engine("sqlite:///:memory:")
+        Base.metadata.create_all(engine)
+        Session = sessionmaker(bind=engine)
+        db = Session()
+        return BotRouter(db)
+
+    def test_natural_track_with_flight(self, router):
+        reply = router.handle("user1", "I'm on flight P47123")
+        assert "Tracking" in reply or "P47123" in reply
+
+    def test_natural_track_without_flight_asks(self, router):
+        reply = router.handle("user1", "track my flight")
+        # Should ask for flight number since none was detected
+        assert "flight" in reply.lower()
+
+    def test_explicit_track_still_works(self, router):
+        reply = router.handle("user1", "TRACK P47123 2026-08-15")
+        assert "Tracking" in reply or "P47123" in reply
