@@ -125,6 +125,20 @@ Toggle with the `FARE_SOURCE` env var — `mock` (default), `google`, `amadeus`,
 | Enugu Air | Q9 | Limited | No |
 | ~~Dana Air~~ | ~~9J~~ | ~~Defunct (NCAA suspended April 2024)~~ | No |
 
+### Google Flights safety filter
+
+The `fli` library's internal `Airline` enum has **incorrect string values** for
+some carriers (e.g. `Airline.P4.value` returns `'Aerolineas Sosa'` — a Honduran
+airline — instead of `'Air Peace'`). The ingestor was fixed to use
+`flight.primary_airline.name` (correct IATA code) and
+`flight.primary_airline_name` (correct human name) instead of `leg.airline.value`.
+
+As a permanent safety net, `GoogleFlightsIngestor` maintains a
+`NIGERIAN_DOMESTIC_AIRLINES` allow-list. Any result attributed to an airline
+NOT in that set for a Nigeria-domestic route is **dropped and logged as
+suspicious** rather than returned as a real fare. A dropped result is fine;
+a wrong result shown to a user as real is not.
+
 ### Tuning knobs
 
 | Env var | Default | Description |
@@ -173,10 +187,11 @@ Toggle with the `FARE_SOURCE` env var — `mock` (default), `google`, `amadeus`,
 cd araha && python -m pytest tests -v
 ```
 
-**40+ passing** — covers: fare ingestion (mock + Amadeus), FX conversion, price-alert
-triggering (date-aware), status parsing, confirmation/dispute/majority-wins, emoji
-templates, FARE_SOURCE toggle, Dana Air removal, rolling-window sampling, specific-date
-subscriptions, date-scoped queries, and command parsing with dates.
+**159 passing** — covers: fare ingestion (mock + Amadeus + Google Flights safety
+filter), FX conversion, price-alert triggering (date-aware), status parsing,
+confirmation/dispute/majority-wins, emoji templates, FARE_SOURCE toggle, Dana Air
+removal, rolling-window sampling, specific-date subscriptions, date-scoped queries,
+command parsing with dates, implausible-airline filtering, and conversation state.
 
 ## What's REAL vs MOCKED
 

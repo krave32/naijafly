@@ -261,6 +261,23 @@ WEST_AFRICAN_AIRLINES = {
     "9J": "Dana Air (defunct)",  # Suspended by NCAA April 2024, ceased operations
 }
 
+# Plausible airlines for Nigerian domestic routes (safety filter).
+# Any Google Flights result NOT in this set is dropped as suspicious.
+# This prevents the fli library's airline enum bugs from serving wrong data.
+NIGERIAN_DOMESTIC_AIRLINES = {
+    "P4",  # Air Peace
+    "W3",  # Arik Air
+    "QI",  # Ibom Air
+    "UN",  # United Nigeria Airlines
+    "NK",  # Green Africa Airways
+    "VK",  # ValueJet
+    "OF",  # Overland Airways
+    "NE",  # NG Eagle
+    "MX",  # Max Air
+    "UM",  # Umza Air
+    "Q9",  # Enugu Air
+}
+
 # Currency for Nigerian domestic flights (always NGN).
 # Kept as a dict for backward compatibility with ingestor code that looks up
 # per-airport currency. All Nigerian airports use NGN.
@@ -376,19 +393,48 @@ class GoogleFlightsIngestor(FareIngestor):
                 if price is None or price <= 0:
                     continue
 
-                # Extract airline info from flight legs
+                # ── Extract airline info ────────────────────────────────
+                # ROOT CAUSE FIX (2026-07): The fli library's internal Airline
+                # enum has WRONG string values (e.g. P4 → 'Aerolineas Sosa'
+                # instead of 'Air Peace'). We must NOT trust leg.airline.value.
+                # Instead, use flight.primary_airline_name (correct human name)
+                # and flight.primary_airline.name (correct IATA code).
                 airline_code = ""
                 airline_name = "Unknown"
-                if hasattr(flight, 'legs') and flight.legs:
+
+                # Method 1: primary_airline_name (most reliable, always correct)
+                if hasattr(flight, 'primary_airline_name') and flight.primary_airline_name:
+                    airline_name = flight.primary_airline_name
+                # Method 2: primary_airline enum .name gives the IATA code
+                if hasattr(flight, 'primary_airline') and flight.primary_airline:
+                    airline_code = flight.primary_airline.name
+                # Fallback: leg airline .name (IATA code from enum)
+                elif hasattr(flight, 'legs') and flight.legs:
                     leg = flight.legs[0]
                     if hasattr(leg, 'airline') and leg.airline:
-                        airline_code = leg.airline.value if hasattr(leg.airline, 'value') else str(leg.airline)
-                        airline_name = WEST_AFRICAN_AIRLINES.get(
-                            airline_code, airline_code)
+                        airline_code = leg.airline.name if hasattr(leg.airline, 'name') else ""
 
-                source = f"{airline_name} via Google Flights"
+                # Look up our own name mapping (authoritative)
                 if airline_code:
-                    source = f"{airline_name} ({airline_code}) via Google Flights"
+                    airline_name = WEST_AFRICAN_AIRLINES.get(airline_code, airline_name)
+
+                # ── Safety filter: drop implausible airlines ───────────
+                # For Nigeria-domestic routes, only allow known carriers.
+                if airline_code and airline_code not in NIGERIAN_DOMESTIC_AIRLINES:
+                    logger.warning(
+                        "SAFETY FILTER: dropping fare from implausible airline "
+                        "%s (%s) for Nigeria-domestic route %s->%s. "
+                        "fli enum may have incorrect airline mapping.",
+                        airline_code, airline_name, origin, destination)
+                    continue
+                if not airline_code:
+                    logger.warning(
+                        "SAFETY FILTER: dropping fare with unknown airline "
+                        "for Nigeria-domestic route %s->%s.",
+                        origin, destination)
+                    continue
+
+                source = f"{airline_name} ({airline_code}) via Google Flights"
 
                 fares.append({
                     "price": price,
