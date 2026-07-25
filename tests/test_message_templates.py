@@ -93,4 +93,4 @@ def test_help_text_intentionally_has_no_emoji():
     is exempt from the scheme."""
     from app.services.bot_router import HELP_TEXT
     first_line = HELP_TEXT.strip().splitlines()[0]
-    assert first_line == "Araha commands:"
+    assert first_line.startswith("Araha")

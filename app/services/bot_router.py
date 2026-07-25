@@ -1,13 +1,17 @@
-"""Inbound WhatsApp command router.
+"""Inbound WhatsApp command router with hybrid NLP.
 
-Commands (case-insensitive):
-  SUBSCRIBE LOS ABV [80000]             -> fare-drop alerts, rolling 30-day window
-  SUBSCRIBE LOS ABV 2026-08-15 [80000]  -> fare-drop alerts for specific date only
-  FARE LOS ABV                           -> cheapest fare in next 30 days
-  FARE LOS ABV 2026-08-15               -> cheapest fare for that specific date
-  TRACK P47123 2026-07-20               -> live boarding/gate/delay pushes
-  <free text while tracking>            -> treated as a status report
-  HELP                                  -> command list
+Routing priority:
+  1. Explicit commands (SUBSCRIBE, FARE, TRACK, HELP) — backward compatible
+  2. Pattern matcher (regex-based, instant, free)
+  3. LLM parser (OpenAI API, ~1s latency, fallback)
+  4. Status report (if user is tracking a flight)
+  5. Conversational help message
+
+Natural language examples understood:
+  "cheap flights from Lagos to Abuja"
+  "how much to fly to Port Harcourt?"
+  "alert me when prices drop for Enugu"
+  "what's the cheapest flight to Kano in August?"
 
 Returns the reply text to send back. All DB access goes through the session
 passed in, so the router is fully unit-testable without HTTP or Twilio.
@@ -24,19 +28,22 @@ from app.models.models import Route, Flight, UserSubscription, StatusType
 from app.services.fare_service import FareService
 from app.services.status_service import StatusAggregationService
 from app.utils.parser import MessageParser
+from app.utils.intent_parser import parse_intent, Intent
+from app.utils.llm_parser import parse_with_llm
 from app.utils import notify_templates as tmpl
 
 HELP_TEXT = (
-    "Araha commands:\n"
-    "SUBSCRIBE <FROM> <TO> [target price] - fare drop alerts, next 30 days\n"
-    "  e.g. SUBSCRIBE LOS ABV 80000\n"
-    "SUBSCRIBE <FROM> <TO> <YYYY-MM-DD> [target price] - specific date only\n"
-    "  e.g. SUBSCRIBE LOS ABV 2026-08-15 80000\n"
-    "FARE <FROM> <TO> - cheapest fare in next 30 days\n"
-    "FARE <FROM> <TO> <YYYY-MM-DD> - cheapest for that date\n"
-    "TRACK <FLIGHT> <YYYY-MM-DD> - live boarding updates\n"
-    "While tracking, text what you see: 'boarding now gate 12'\n"
-    "HELP - this message"
+    "Araha — Nigeria Flight Fare Tracker\n\n"
+    "You can talk to me naturally! Try:\n"
+    '  "cheap flights from Lagos to Abuja"\n'
+    '  "how much to fly to Port Harcourt?"\n'
+    '  "alert me when prices drop for Enugu"\n\n'
+    "Or use commands:\n"
+    "  SUBSCRIBE LOS ABV [target price]\n"
+    "  SUBSCRIBE LOS ABV 2026-08-15 [target]\n"
+    "  FARE LOS ABV [date]\n"
+    "  TRACK P47123 2026-07-20\n\n"
+    "HELP — this message"
 )
 
 # Rolling window for fare queries when no specific date given
@@ -78,6 +85,7 @@ class BotRouter:
         parts = text.split()
         cmd = parts[0].upper()
 
+        # ── 1. Explicit commands (backward compatible) ────────────────
         if cmd == "HELP":
             return HELP_TEXT
         if cmd == "SUBSCRIBE" and len(parts) >= 3:
@@ -88,8 +96,119 @@ class BotRouter:
             date_str = parts[2] if len(parts) > 2 else None
             return self._track_flight(user_id, parts[1], date_str)
 
-        # Not a command: if the user tracks any flight, treat as a status report
-        return self._maybe_status_report(user_id, text)
+        # ── 2. Pattern matcher (instant, free) ────────────────────────
+        intent = parse_intent(text)
+        if intent.confidence >= 0.4:
+            return self._handle_intent(user_id, intent)
+
+        # ── 3. LLM parser (fallback, ~1s latency) ─────────────────────
+        if intent.confidence < 0.4:
+            llm_intent = parse_with_llm(text)
+            if llm_intent and llm_intent.confidence > 0:
+                return self._handle_intent(user_id, llm_intent)
+
+        # ── 4. Status report (if user is tracking a flight) ───────────
+        status_reply = self._maybe_status_report(user_id, text)
+        if status_reply != HELP_TEXT:
+            return status_reply
+
+        # ── 5. Friendly fallback ──────────────────────────────────────
+        return (
+            "I didn't quite catch that. You can ask me things like:\n"
+            '  "cheap flights from Lagos to Abuja"\n'
+            '  "how much to fly to Port Harcourt?"\n'
+            '  "alert me when prices drop for Enugu"\n\n'
+            "Or type HELP to see all options."
+        )
+
+    # ---- natural language intent handler ----
+
+    def _handle_intent(self, user_id: str, intent: Intent) -> str:
+        """Route a parsed natural-language intent to the appropriate handler."""
+        if intent.action == "help":
+            return HELP_TEXT
+
+        if intent.action == "fare_query":
+            return self._handle_natural_fare(intent)
+
+        if intent.action == "subscribe":
+            return self._handle_natural_subscribe(user_id, intent)
+
+        # Unknown intent — shouldn't happen given confidence check
+        return HELP_TEXT
+
+    def _handle_natural_fare(self, intent: Intent) -> str:
+        """Handle a fare_query intent from natural language."""
+        if not intent.is_complete_route():
+            if intent.destination and not intent.origin:
+                return (
+                    f"I can check fares to {intent.destination}. "
+                    f"Where are you flying from? "
+                    f"(e.g. Lagos, Abuja, Port Harcourt)"
+                )
+            return (
+                "Which route? Tell me the cities, e.g. "
+                '"Lagos to Abuja" or "Port Harcourt to Kano".'
+            )
+
+        route = self.db.query(Route).filter_by(
+            origin=intent.origin, destination=intent.destination).first()
+        if not route:
+            return tmpl.no_route_reply(intent.origin, intent.destination)
+
+        if intent.date:
+            cheapest = self.fare_service.get_cheapest_fare(
+                route.id, specific_date=intent.date)
+            date_label = intent.date.strftime("%Y-%m-%d")
+        else:
+            window_end = datetime.utcnow() + timedelta(days=FARE_WINDOW_DAYS)
+            cheapest = self.fare_service.get_cheapest_fare(
+                route.id, date_from=datetime.utcnow(), date_to=window_end)
+            date_label = "next 30 days"
+
+        if not cheapest:
+            return tmpl.no_fare_data_reply(route.origin, route.destination)
+
+        return tmpl.fare_found_reply(
+            route.origin, route.destination, cheapest["price_local"],
+            cheapest["currency_local"], cheapest["price_usd"],
+            cheapest["source"], date_label)
+
+    def _handle_natural_subscribe(self, user_id: str, intent: Intent) -> str:
+        """Handle a subscribe intent from natural language."""
+        if not intent.is_complete_route():
+            if intent.destination and not intent.origin:
+                return (
+                    f"I'll watch prices to {intent.destination} for you. "
+                    f"Where are you flying from? "
+                    f"(e.g. Lagos, Abuja, Port Harcourt)"
+                )
+            return (
+                "Which route do you want alerts for? "
+                'Tell me the cities, e.g. "Lagos to Abuja".'
+            )
+
+        route = self._get_or_create_route(intent.origin, intent.destination)
+        return self._do_subscribe(route, intent.date, intent.target_price, user_id)
+
+    def _do_subscribe(self, route, target_date, target_price,
+                      user_id: str = "") -> str:
+        """Shared subscribe logic for both command and NL paths."""
+        existing = self.db.query(UserSubscription).filter_by(
+            user_id=user_id, route_id=route.id,
+            target_date=target_date).first()
+        if existing:
+            existing.target_price = target_price
+        else:
+            self.db.add(UserSubscription(
+                user_id=user_id, route_id=route.id,
+                target_price=target_price, target_date=target_date))
+        self.db.commit()
+
+        date_label = (target_date.strftime("%Y-%m-%d")
+                      if target_date else "next 30 days")
+        return tmpl.subscribed_reply(
+            route.origin, route.destination, target_price, date_label)
 
     # ---- handlers ----
 
