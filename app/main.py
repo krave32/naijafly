@@ -10,7 +10,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from fastapi import FastAPI, Form, Depends, Request
-from fastapi.responses import Response, HTMLResponse
+from fastapi.responses import Response, HTMLResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 
 from app.core.database import engine, get_db
@@ -35,6 +36,18 @@ def _migrate_target_date():
 
 
 app = FastAPI(title="Araha MVP")
+
+# Serve the landing page at root
+import pathlib
+_STATIC_DIR = pathlib.Path(__file__).resolve().parent.parent  # project root (naijafly/)
+
+
+@app.get("/", response_class=HTMLResponse)
+def landing_page():
+    index = _STATIC_DIR / "index.html"
+    if index.exists():
+        return index.read_text(encoding="utf-8")
+    return HTMLResponse("<h1>Araha</h1><p>Landing page not found.</p>", status_code=404)
 
 
 @app.on_event("startup")

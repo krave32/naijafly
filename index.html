@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Araha — Nigeria's Flight Fare Tracker</title>
+<meta name="description" content="Get instant fare-drop alerts and live boarding updates for Nigerian domestic flights, right on WhatsApp. Track Air Peace, Arik Air, Ibom Air and more.">
+<meta name="theme-color" content="#0a8754">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --green:#0a8754;--green-dark:#066940;--green-light:#e8f5e9;
+  --dark:#111827;--gray:#6b7280;--gray-light:#f3f4f6;
+  --white:#ffffff;--radius:12px;--radius-sm:8px;
+  --shadow:0 4px 24px rgba(0,0,0,.08);
+  --shadow-lg:0 12px 40px rgba(0,0,0,.12);
+}
+html{scroll-behavior:smooth}
+body{font-family:'Inter',system-ui,-apple-system,sans-serif;color:var(--dark);line-height:1.6;-webkit-font-smoothing:antialiased}
+img{max-width:100%;display:block}
+a{color:var(--green);text-decoration:none}
+a:hover{color:var(--green-dark)}
+
+/* ── Layout ── */
+.container{max-width:1120px;margin:0 auto;padding:0 24px}
+section{padding:80px 0}
+@media(max-width:768px){section{padding:56px 0}}
+
+/* ── Nav ── */
+.nav{position:fixed;top:0;left:0;right:0;z-index:100;background:rgba(255,255,255,.92);backdrop-filter:blur(12px);border-bottom:1px solid rgba(0,0,0,.06)}
+.nav-inner{display:flex;align-items:center;justify-content:space-between;height:64px}
+.nav-logo{font-weight:800;font-size:1.4rem;color:var(--dark);display:flex;align-items:center;gap:8px}
+.nav-logo span{color:var(--green)}
+.nav-links{display:flex;gap:28px;align-items:center}
+.nav-links a{font-size:.9rem;font-weight:500;color:var(--gray)}
+.nav-links a:hover{color:var(--dark)}
+.nav-cta{background:var(--green);color:var(--white)!important;padding:8px 20px;border-radius:80px;font-weight:600;font-size:.85rem;transition:background .2s}
+.nav-cta:hover{background:var(--green-dark);color:var(--white)!important}
+@media(max-width:640px){.nav-links a:not(.nav-cta){display:none}}
+
+/* ── Hero ── */
+.hero{padding:140px 0 80px;text-align:center;background:linear-gradient(180deg,var(--green-light) 0%,var(--white) 100%)}
+.hero-badge{display:inline-flex;align-items:center;gap:6px;background:var(--white);border:1px solid #d1fae5;color:var(--green);font-size:.8rem;font-weight:600;padding:6px 16px;border-radius:80px;margin-bottom:24px}
+.hero h1{font-size:clamp(2rem,5vw,3.4rem);font-weight:800;line-height:1.15;letter-spacing:-.02em;margin-bottom:20px}
+.hero h1 em{font-style:normal;color:var(--green)}
+.hero p{font-size:clamp(1rem,2vw,1.2rem);color:var(--gray);max-width:600px;margin:0 auto 36px}
+.hero-actions{display:flex;gap:16px;justify-content:center;flex-wrap:wrap}
+.btn{display:inline-flex;align-items:center;gap:10px;padding:14px 32px;border-radius:80px;font-weight:600;font-size:1rem;transition:all .2s;cursor:pointer;border:none}
+.btn-primary{background:var(--green);color:var(--white);box-shadow:0 4px 16px rgba(10,135,84,.3)}
+.btn-primary:hover{background:var(--green-dark);color:var(--white);transform:translateY(-1px);box-shadow:0 6px 24px rgba(10,135,84,.35)}
+.btn-secondary{background:var(--white);color:var(--dark);border:1.5px solid #d1d5db}
+.btn-secondary:hover{border-color:var(--green);color:var(--green)}
+.btn svg{width:20px;height:20px;flex-shrink:0}
+.hero-note{margin-top:20px;font-size:.85rem;color:var(--gray)}
+
+/* ── Features ── */
+.features{background:var(--white)}
+.section-label{font-size:.8rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--green);margin-bottom:8px}
+.section-title{font-size:clamp(1.6rem,3.5vw,2.4rem);font-weight:800;line-height:1.2;margin-bottom:12px}
+.section-subtitle{font-size:1.05rem;color:var(--gray);max-width:560px;margin-bottom:48px}
+.feature-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:24px}
+.feature-card{background:var(--gray-light);border-radius:var(--radius);padding:32px;transition:transform .2s,box-shadow .2s}
+.feature-card:hover{transform:translateY(-4px);box-shadow:var(--shadow)}
+.feature-icon{width:48px;height:48px;background:var(--green-light);border-radius:var(--radius-sm);display:flex;align-items:center;justify-content:center;font-size:1.5rem;margin-bottom:16px}
+.feature-card h3{font-size:1.1rem;font-weight:700;margin-bottom:8px}
+.feature-card p{font-size:.92rem;color:var(--gray);line-height:1.6}
+
+/* ── How It Works ── */
+.how{background:var(--gray-light)}
+.steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:32px;counter-reset:step}
+.step{text-align:center;position:relative}
+.step::before{counter-increment:step;content:counter(step);display:flex;align-items:center;justify-content:center;width:48px;height:48px;border-radius:50%;background:var(--green);color:var(--white);font-weight:800;font-size:1.2rem;margin:0 auto 16px}
+.step h3{font-size:1.05rem;font-weight:700;margin-bottom:6px}
+.step p{font-size:.9rem;color:var(--gray)}
+
+/* ── Commands ── */
+.commands{background:var(--white)}
+.cmd-table{width:100%;border-collapse:collapse;font-size:.92rem}
+.cmd-table th{text-align:left;padding:12px 16px;background:var(--green-light);color:var(--green-dark);font-weight:600;font-size:.8rem;text-transform:uppercase;letter-spacing:.04em}
+.cmd-table td{padding:14px 16px;border-bottom:1px solid var(--gray-light)}
+.cmd-table tr:last-child td{border-bottom:none}
+.cmd-table code{background:#ecfdf5;color:#065f46;padding:3px 8px;border-radius:4px;font-size:.82rem;font-weight:500;white-space:nowrap}
+.cmd-wrap{overflow-x:auto;border-radius:var(--radius);border:1px solid #e5e7eb}
+
+/* ── Airports ── */
+.airports{background:var(--gray-light)}
+.airport-grid{display:flex;flex-wrap:wrap;gap:12px;justify-content:center}
+.airport-tag{background:var(--white);border:1px solid #e5e7eb;border-radius:80px;padding:8px 18px;font-size:.85rem;font-weight:500;display:flex;align-items:center;gap:6px;transition:border-color .2s}
+.airport-tag:hover{border-color:var(--green)}
+.airport-tag .code{font-weight:700;color:var(--green)}
+
+/* ── Airlines ── */
+.airlines{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin-top:32px}
+.airline-chip{background:var(--white);border:1px solid #e5e7eb;border-radius:8px;padding:8px 16px;font-size:.82rem;font-weight:500}
+
+/* ── FAQ ── */
+.faq{background:var(--white)}
+.faq-list{max-width:720px;margin:0 auto}
+.faq-item{border-bottom:1px solid var(--gray-light)}
+.faq-q{display:flex;align-items:center;justify-content:space-between;padding:20px 0;cursor:pointer;font-weight:600;font-size:1rem;gap:16px}
+.faq-q::after{content:'+';font-size:1.4rem;color:var(--green);flex-shrink:0;transition:transform .2s}
+.faq-item.open .faq-q::after{transform:rotate(45deg)}
+.faq-a{max-height:0;overflow:hidden;transition:max-height .3s ease,padding .3s ease;font-size:.92rem;color:var(--gray);line-height:1.7}
+.faq-item.open .faq-a{max-height:300px;padding-bottom:20px}
+
+/* ── CTA Banner ── */
+.cta-banner{background:var(--green);color:var(--white);text-align:center;padding:72px 24px}
+.cta-banner h2{font-size:clamp(1.5rem,3.5vw,2.2rem);font-weight:800;margin-bottom:12px}
+.cta-banner p{font-size:1.05rem;opacity:.85;max-width:500px;margin:0 auto 28px}
+.cta-banner .btn{background:var(--white);color:var(--green)}
+.cta-banner .btn:hover{background:#f0fdf4}
+
+/* ── Footer ── */
+.footer{background:var(--dark);color:rgba(255,255,255,.6);padding:48px 0;text-align:center;font-size:.85rem}
+.footer a{color:rgba(255,255,255,.8)}
+.footer a:hover{color:var(--white)}
+.footer-brand{font-size:1.1rem;font-weight:700;color:var(--white);margin-bottom:8px}
+.footer-links{display:flex;gap:24px;justify-content:center;margin:16px 0}
+</style>
+</head>
+<body>
+
+<!-- ── Navigation ── -->
+<nav class="nav">
+  <div class="container nav-inner">
+    <div class="nav-logo">✈️ <span>Araha</span></div>
+    <div class="nav-links">
+      <a href="#features">Features</a>
+      <a href="#how">How it works</a>
+      <a href="#commands">Commands</a>
+      <a href="#faq">FAQ</a>
+      <a href="https://wa.me/2348000000000?text=HI" class="nav-cta" target="_blank" rel="noopener">Chat on WhatsApp</a>
+    </div>
+  </div>
+</nav>
+
+<!-- ── Hero ── -->
+<header class="hero">
+  <div class="container">
+    <div class="hero-badge">🇳🇬 Built for Nigerian domestic flights</div>
+    <h1>Never overpay for a flight.<br><em>Get alerts on WhatsApp.</em></h1>
+    <p>Araha tracks fares across Nigeria and sends you the moment a price drops on your route — plus live boarding and gate updates from real passengers at the airport.</p>
+    <div class="hero-actions">
+      <a href="https://wa.me/2348000000000?text=HI" class="btn btn-primary" target="_blank" rel="noopener">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.12.553 4.115 1.518 5.847L0 24l6.335-1.652A11.94 11.94 0 0 0 12 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.82c-1.944 0-3.79-.526-5.382-1.512l-.387-.23-3.758.981.999-3.648-.253-.401A9.783 9.783 0 0 1 2.18 12c0-5.422 4.398-9.82 9.82-9.82 5.422 0 9.82 4.398 9.82 9.82 0 5.422-4.398 9.82-9.82 9.82z"/></svg>
+        Start on WhatsApp
+      </a>
+      <a href="#how" class="btn btn-secondary">See how it works</a>
+    </div>
+    <p class="hero-note">Free to use · No app download · Works on any phone</p>
+  </div>
+</header>
+
+<!-- ── Features ── -->
+<section class="features" id="features">
+  <div class="container">
+    <div class="section-label">Features</div>
+    <h2 class="section-title">Everything you need before you fly</h2>
+    <p class="section-subtitle">Two powerful tools in one WhatsApp chat — fare monitoring and real-time airport intelligence.</p>
+    <div class="feature-grid">
+      <div class="feature-card">
+        <div class="feature-icon">📉</div>
+        <h3>Fare-Drop Alerts</h3>
+        <p>Subscribe to any Nigeria-domestic route and get a WhatsApp message the moment a price drops below your target. Covers the next 30 days or a specific date you choose.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🛫</div>
+        <h3>Live Boarding Status</h3>
+        <p>Track your flight and get confirmed boarding, gate-change, and delay updates — crowdsourced from real passengers at the airport and pushed to you instantly.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">💬</div>
+        <h3>WhatsApp-Native</h3>
+        <p>No app to install, no account to create. Just message Araha on WhatsApp like you'd text a friend. Natural language or quick commands — your choice.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">💰</div>
+        <h3>Real-Time Fare Lookup</h3>
+        <p>Ask for the cheapest fare on any route and get an instant answer with the airline, price in Naira, and USD equivalent — sourced from Google Flights.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🔒</div>
+        <h3>Verified Data</h3>
+        <p>Fares are pulled from Google Flights with a built-in safety filter that only accepts known Nigerian carriers. No phantom airlines, no stale data.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🤝</div>
+        <h3>Community-Powered</h3>
+        <p>Status updates are confirmed by 2+ independent passengers before being broadcast. A trust model with reporter scoring keeps information reliable.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── How It Works ── -->
+<section class="how" id="how">
+  <div class="container">
+    <div class="section-label">How it works</div>
+    <h2 class="section-title">Up and running in 30 seconds</h2>
+    <p class="section-subtitle">No sign-up, no app store. Just WhatsApp.</p>
+    <div class="steps">
+      <div class="step">
+        <h3>Send "HI" on WhatsApp</h3>
+        <p>Open a chat with Araha and say hello. You'll get a quick intro to what the bot can do.</p>
+      </div>
+      <div class="step">
+        <h3>Subscribe to your route</h3>
+        <p>Tell Araha where you're flying — e.g. "cheap flights Lagos to Abuja" or <code>SUBSCRIBE LOS ABV 80000</code>.</p>
+      </div>
+      <div class="step">
+        <h3>Get alerts when prices drop</h3>
+        <p>Araha monitors fares and sends you a WhatsApp message the moment a price falls below your target.</p>
+      </div>
+      <div class="step">
+        <h3>Track your flight on travel day</h3>
+        <p>Send your flight number to get live boarding, gate, and delay updates from passengers at the airport.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── Commands ── -->
+<section class="commands" id="commands">
+  <div class="container">
+    <div class="section-label">Quick reference</div>
+    <h2 class="section-title">Commands at a glance</h2>
+    <p class="section-subtitle">You can talk naturally or use these quick commands — both work.</p>
+    <div class="cmd-wrap">
+      <table class="cmd-table">
+        <thead>
+          <tr><th>Command</th><th>What it does</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>SUBSCRIBE LOS ABV</code></td><td>Fare-drop alerts for Lagos → Abuja, next 30 days</td></tr>
+          <tr><td><code>SUBSCRIBE LOS ABV 80000</code></td><td>Same, but only alert me if price drops below ₦80,000</td></tr>
+          <tr><td><code>SUBSCRIBE LOS ABV 2026-08-15</code></td><td>Alerts for a specific travel date</td></tr>
+          <tr><td><code>FARE LOS ABV</code></td><td>Show cheapest fare for Lagos → Abuja right now</td></tr>
+          <tr><td><code>FARE LOS ABV 2026-08-15</code></td><td>Cheapest fare for a specific date</td></tr>
+          <tr><td><code>TRACK P47123 2026-07-25</code></td><td>Live boarding/gate/delay alerts for Air Peace flight 7123</td></tr>
+          <tr><td><code>boarding now gate 12</code></td><td>Report what you see at the airport (while tracking)</td></tr>
+          <tr><td><code>HELP</code></td><td>Show full command list</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p style="margin-top:20px;font-size:.9rem;color:var(--gray)">💡 You can also just type naturally — try <em>"cheap flights from Lagos to Port Harcourt"</em> or <em>"alert me when Enugu drops below 70k"</em>.</p>
+  </div>
+</section>
+
+<!-- ── Airports & Airlines ── -->
+<section class="airports" id="airports">
+  <div class="container" style="text-align:center">
+    <div class="section-label">Coverage</div>
+    <h2 class="section-title">Airports across Nigeria</h2>
+    <p class="section-subtitle" style="margin-left:auto;margin-right:auto">Every major domestic route is tracked — all fares in Naira.</p>
+    <div class="airport-grid">
+      <div class="airport-tag"><span class="code">LOS</span> Lagos</div>
+      <div class="airport-tag"><span class="code">ABV</span> Abuja</div>
+      <div class="airport-tag"><span class="code">PHC</span> Port Harcourt</div>
+      <div class="airport-tag"><span class="code">ENU</span> Enugu</div>
+      <div class="airport-tag"><span class="code">BNI</span> Benin City</div>
+      <div class="airport-tag"><span class="code">KAN</span> Kano</div>
+      <div class="airport-tag"><span class="code">CBQ</span> Calabar</div>
+      <div class="airport-tag"><span class="code">ILR</span> Ilorin</div>
+      <div class="airport-tag"><span class="code">QOW</span> Owerri</div>
+      <div class="airport-tag"><span class="code">AKR</span> Akure</div>
+    </div>
+    <h3 style="margin-top:40px;font-size:1rem;font-weight:600;color:var(--gray)">Airlines tracked</h3>
+    <div class="airlines">
+      <div class="airline-chip">Air Peace</div>
+      <div class="airline-chip">Arik Air</div>
+      <div class="airline-chip">Ibom Air</div>
+      <div class="airline-chip">United Nigeria</div>
+      <div class="airline-chip">Green Africa</div>
+      <div class="airline-chip">ValueJet</div>
+      <div class="airline-chip">Overland Airways</div>
+      <div class="airline-chip">NG Eagle</div>
+      <div class="airline-chip">Max Air</div>
+      <div class="airline-chip">Umza Air</div>
+      <div class="airline-chip">Enugu Air</div>
+    </div>
+  </div>
+</section>
+
+<!-- ── FAQ ── -->
+<section class="faq" id="faq">
+  <div class="container">
+    <div class="section-label">FAQ</div>
+    <h2 class="section-title">Common questions</h2>
+    <p class="section-subtitle" style="margin-bottom:40px">Everything you need to know about Araha.</p>
+    <div class="faq-list">
+      <div class="faq-item">
+        <div class="faq-q">Is Araha free to use?</div>
+        <div class="faq-a">Yes, Araha is completely free. Fare alerts, flight tracking, and boarding status updates cost you nothing — just standard WhatsApp data charges apply.</div>
+      </div>
+      <div class="faq-item">
+        <div class="faq-q">Where does the fare data come from?</div>
+        <div class="faq-a">Araha pulls real-time fare data from Google Flights, covering Air Peace, Arik Air, Ibom Air, and other Nigerian carriers. A built-in safety filter ensures only verified Nigerian airlines appear in results.</div>
+      </div>
+      <div class="faq-item">
+        <div class="faq-q">How do boarding status updates work?</div>
+        <div class="faq-a">Passengers at the airport report what they see (e.g. "boarding now gate 12"). Once 2+ independent passengers confirm the same status, it's broadcast to everyone tracking that flight. Conflicting reports are flagged as disputed and never pushed without verification.</div>
+      </div>
+      <div class="faq-item">
+        <div class="faq-q">Which airlines and routes are supported?</div>
+        <div class="faq-a">All major Nigerian domestic routes: Lagos, Abuja, Port Harcourt, Enugu, Benin City, Kano, Calabar, Ilorin, Owerri, and Akure. We track Air Peace, Arik Air, Ibom Air, United Nigeria, Green Africa, ValueJet, Overland, NG Eagle, Max Air, Umza Air, and Enugu Air.</div>
+      </div>
+      <div class="faq-item">
+        <div class="faq-q">Do I need to install an app?</div>
+        <div class="faq-a">No. Araha works entirely on WhatsApp — the app you already use every day. Just send a message to get started. No downloads, no accounts, no passwords.</div>
+      </div>
+      <div class="faq-item">
+        <div class="faq-q">Can I set a target price?</div>
+        <div class="faq-a">Yes! When you subscribe, add your target price — e.g. <code>SUBSCRIBE LOS ABV 80000</code>. You'll only get an alert when the fare drops below ₦80,000.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── CTA Banner ── -->
+<section class="cta-banner">
+  <h2>Ready to save on your next flight?</h2>
+  <p>Join Araha on WhatsApp and start tracking fares in seconds.</p>
+  <a href="https://wa.me/2348000000000?text=HI" class="btn" target="_blank" rel="noopener">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.12.553 4.115 1.518 5.847L0 24l6.335-1.652A11.94 11.94 0 0 0 12 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.82c-1.944 0-3.79-.526-5.382-1.512l-.387-.23-3.758.981.999-3.648-.253-.401A9.783 9.783 0 0 1 2.18 12c0-5.422 4.398-9.82 9.82-9.82 5.422 0 9.82 4.398 9.82 9.82 0 5.422-4.398 9.82-9.82 9.82z"/></svg>
+    Chat with Araha
+  </a>
+</section>
+
+<!-- ── Footer ── -->
+<footer class="footer">
+  <div class="container">
+    <div class="footer-brand">Araha</div>
+    <p>Nigeria's Flight Fare Tracker — fare alerts & live boarding status on WhatsApp.</p>
+    <div class="footer-links">
+      <a href="#features">Features</a>
+      <a href="#how">How it works</a>
+      <a href="#commands">Commands</a>
+      <a href="#faq">FAQ</a>
+    </div>
+    <p>&copy; 2026 Araha. All rights reserved.</p>
+  </div>
+</footer>
+
+<script>
+// FAQ accordion
+document.querySelectorAll('.faq-q').forEach(q => {
+  q.addEventListener('click', () => {
+    const item = q.parentElement;
+    const wasOpen = item.classList.contains('open');
+    document.querySelectorAll('.faq-item.open').forEach(i => i.classList.remove('open'));
+    if (!wasOpen) item.classList.add('open');
+  });
+});
+
+// Smooth scroll for anchor links
+document.querySelectorAll('a[href^="#"]').forEach(a => {
+  a.addEventListener('click', e => {
+    e.preventDefault();
+    const target = document.querySelector(a.getAttribute('href'));
+    if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+});
+</script>
+</body>
+</html>
