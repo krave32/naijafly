@@ -33,7 +33,7 @@ from app.utils.llm_parser import parse_with_llm
 from app.utils import notify_templates as tmpl
 
 HELP_TEXT = (
-    "Araha — Nigeria Flight Fare Tracker\n\n"
+    "Araha — Nigeria's Flight Fare Tracker\n\n"
     "You can talk to me naturally! Try:\n"
     '  "cheap flights from Lagos to Abuja"\n'
     '  "how much to fly to Port Harcourt?"\n'

@@ -1,4 +1,4 @@
-# Araha — Nigeria Flight Fare Tracker + Crowdsourced Boarding Status
+# Araha — Nigeria's Flight Fare Tracker + Crowdsourced Boarding Status
 
 WhatsApp-first fare alerts and passenger-reported flight status for **Nigerian domestic routes**.
 The full loop is real end-to-end: **a message in triggers a reply, a status escalation
