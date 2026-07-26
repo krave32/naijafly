@@ -67,6 +67,7 @@ nothing else changes.
 | `TRACK P47123 2026-07-20` | Live boarding/gate/delay pushes for that flight |
 | `boarding now gate 12` (while tracking) | Files a status report |
 | `HELP` | Command list |
+| `STOP` | Unsubscribe from ALL alerts and remove your data |
 
 ### Date-aware fares
 
@@ -148,6 +149,38 @@ a wrong result shown to a user as real is not.
 | `FARE_WINDOW_SAMPLE_DAYS` | 5 | Sample every N days within window |
 | `FARE_SOURCE` | mock | Active ingestor: mock/google/amadeus/hybrid |
 | `GOOGLE_FLIGHTS_CURRENCY` | NGN | Currency for Google Flights queries |
+| `ADMIN_USER` | *(unset)* | HTTP Basic Auth username for /admin |
+| `ADMIN_PASSWORD` | *(unset)* | HTTP Basic Auth password for /admin |
+
+## Admin authentication
+
+The `/admin` dashboard is protected with HTTP Basic Auth. Set both `ADMIN_USER`
+and `ADMIN_PASSWORD` environment variables before deployment:
+
+```bash
+# Local (.env file)
+ADMIN_USER=admin
+ADMIN_PASSWORD=your-strong-password
+
+# Railway
+railway variables set ADMIN_USER=admin ADMIN_PASSWORD=your-strong-password
+```
+
+If either variable is unset, the admin panel runs **unprotected** with a clear
+startup warning in the logs. Never deploy to production without these set.
+
+## Privacy & data protection (NDPA)
+
+Araha complies with the Nigeria Data Protection Act (NDPA) 2023.
+See [PRIVACY.md](PRIVACY.md) for the full privacy policy.
+
+**Summary:**
+- **Collected:** phone number, subscribed routes, reported flight statuses
+- **Not collected:** name, email, payment info, location
+- **Removal:** Send `STOP` to unsubscribe from all alerts and have your personal
+  data deleted/anonymized. Historical records are anonymized (phone number
+  replaced with `[deleted]`) rather than kept tied to your identity.
+- The onboarding message includes a data-use notice per NDPA requirements.
 
 ## Notification emoji scheme (centralized in notify_templates.py)
 
@@ -202,7 +235,7 @@ command parsing with dates, implausible-airline filtering, and conversation stat
 | Price-drop alert worker (APScheduler, date-aware) | **REAL** |
 | Boarding-status confirm → push loop | **REAL** |
 | FX rates (open.er-api.com, keyless, NGN only) | **REAL** with cached fallback |
-| Admin view (`/admin`) | **REAL** (no auth — add basic auth for pilot) |
+| Admin view (`/admin`) | **REAL** (HTTP Basic Auth protected) |
 | Fare data (mock) | **REAL** code, fake prices — default for dev |
 | Fare data (Google Flights) | **REAL** via fli library — **primary for production** |
 | Fare data (Amadeus) | **REAL** code, secondary — no NG domestic carrier coverage |
@@ -210,7 +243,6 @@ command parsing with dates, implausible-airline filtering, and conversation stat
 ## STILL not done
 
 1. **Production WhatsApp Business API approval** — sandbox only.
-2. Admin auth (one line of basic-auth middleware before pilot).
-3. **Google Flights rate-limit hardening** — at very high poll frequencies.
-4. **fli legal review** — reverse-engineered API; review Google ToS before
+2. **Google Flights rate-limit hardening** — at very high poll frequencies.
+3. **fli legal review** — reverse-engineered API; review Google ToS before
    commercial deployment at scale.

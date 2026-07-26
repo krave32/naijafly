@@ -1,4 +1,4 @@
-"""Minimal HTML admin view - no auth (MVP; put behind VPN/basic-auth for pilot)."""
+"""Minimal HTML admin view - protected by HTTP Basic Auth (see main.py)."""
 from sqlalchemy.orm import Session
 
 from app.models.models import (

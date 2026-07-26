@@ -56,6 +56,7 @@ EMOJI_REPORT_LOGGED = "📝"
 EMOJI_RATE_LIMITED = "⏳"
 EMOJI_UNCLEAR = "❓"
 EMOJI_WELCOME = "👋"
+EMOJI_STOP = "✅"
 
 # Keywords that trigger the welcome intro on-demand (any user, new or returning)
 GREETING_KEYWORDS = {"HI", "HELLO", "START", "MENU"}
@@ -124,6 +125,8 @@ def welcome_intro() -> str:
     Also triggered on-demand via HI/HELLO/START/MENU from any user.
     Kept shorter and friendlier than HELP_TEXT — this is the warm first
     impression, not the exhaustive reference.
+
+    Includes NDPA-required data-use notice.
     """
     return (
         f"{EMOJI_WELCOME} Welcome to Araha!\n\n"
@@ -134,7 +137,30 @@ def welcome_intro() -> str:
         '  "cheap flights from Lagos to Abuja"\n'
         "  SUBSCRIBE LOS ABV 80000\n"
         "  TRACK P47123 2026-07-25\n\n"
-        "Type HELP anytime for the full command list."
+        "Type HELP anytime for the full command list.\n\n"
+        "\U0001f512 Your data: we store your phone number, subscribed routes, and "
+        "any flight statuses you report. Send STOP anytime to unsubscribe and "
+        "have your data removed."
+    )
+
+
+def stop_confirmation(removed_count: int) -> str:
+    """Confirmation message after STOP command removes user data.
+
+    Args:
+        removed_count: Number of subscriptions removed (0 if idempotent call).
+    """
+    if removed_count > 0:
+        return (
+            f"{EMOJI_STOP} You've been unsubscribed.\n\n"
+            f"Removed {removed_count} subscription(s) and deleted your personal "
+            f"data from our records.\n\n"
+            "If you change your mind, just text HI to start again."
+        )
+    return (
+        f"{EMOJI_STOP} You have no active subscriptions.\n\n"
+        "Your personal data has been removed from our records.\n\n"
+        "If you change your mind, just text HI to start again."
     )
 
 

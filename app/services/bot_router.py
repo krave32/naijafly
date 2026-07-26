@@ -24,7 +24,7 @@ from sqlalchemy.orm import Session
 
 logger = logging.getLogger("araha.bot_router")
 
-from app.models.models import Route, Flight, UserSubscription, StatusType, SeenUser
+from app.models.models import Route, Flight, UserSubscription, StatusType, SeenUser, AlertHistory, StatusReport, ReporterScore
 from app.services.fare_service import FareService
 from app.services.status_service import StatusAggregationService
 from app.utils.parser import MessageParser
@@ -43,8 +43,15 @@ HELP_TEXT = (
     "  SUBSCRIBE LOS ABV 2026-08-15 [target]\n"
     "  FARE LOS ABV [date]\n"
     "  TRACK P47123 2026-07-20\n\n"
+    "  STOP — unsubscribe from all alerts and delete your data\n\n"
     "HELP — this message"
 )
+
+# STOP command variants (NDPA compliance - user can request data removal)
+STOP_COMMANDS = {"STOP", "UNSUBSCRIBE", "CANCEL", "QUIT", "REMOVE"}
+
+# Anonymized user_id placeholder after STOP
+ANONYMOUS_USER_ID = "[deleted]"
 
 # Rolling window for fare queries when no specific date given
 FARE_WINDOW_DAYS = 30
@@ -103,6 +110,8 @@ class BotRouter:
         # ── 1. Explicit commands (backward compatible) ────────────────
         if cmd == "HELP":
             return HELP_TEXT
+        if cmd in STOP_COMMANDS:
+            return self._handle_stop(user_id)
         if cmd == "SUBSCRIBE" and len(parts) >= 3:
             return self._handle_subscribe(user_id, parts[1:])
         if cmd == "FARE" and len(parts) >= 3:
@@ -461,6 +470,59 @@ class BotRouter:
         flight = self.db.query(Flight).get(sub.flight_id)
         return tmpl.report_logged_reply(
             status_type.value, gate, flight.flight_number)
+
+    # ---- STOP / unsubscribe (NDPA compliance) ----
+
+    def _handle_stop(self, user_id: str) -> str:
+        """Unsubscribe the user from ALL alerts and anonymize their data.
+
+        NDPA-compliant data removal:
+        - Deletes all fare subscriptions and flight-tracking subscriptions
+        - Anonymizes user_id in alert history and status reports
+        - Removes the SeenUser record (resets first-contact status)
+        - Deletes ReporterScore record if present
+
+        Idempotent: sending STOP when already unsubscribed doesn't error.
+        """
+        # Count before deletion for the confirmation message
+        fare_subs = self.db.query(UserSubscription).filter(
+            UserSubscription.user_id == user_id,
+            UserSubscription.route_id.isnot(None)
+        ).all()
+        flight_subs = self.db.query(UserSubscription).filter(
+            UserSubscription.user_id == user_id,
+            UserSubscription.flight_id.isnot(None)
+        ).all()
+        total_subs = len(fare_subs) + len(flight_subs)
+
+        # Delete all subscriptions
+        self.db.query(UserSubscription).filter(
+            UserSubscription.user_id == user_id
+        ).delete(synchronize_session=False)
+
+        # Anonymize alert history (replace user_id with [deleted])
+        self.db.query(AlertHistory).filter(
+            AlertHistory.user_id == user_id
+        ).update({"user_id": ANONYMOUS_USER_ID}, synchronize_session=False)
+
+        # Anonymize status reports (replace reporter_id with [deleted])
+        self.db.query(StatusReport).filter(
+            StatusReport.reporter_id == user_id
+        ).update({"reporter_id": ANONYMOUS_USER_ID}, synchronize_session=False)
+
+        # Anonymize reporter score
+        self.db.query(ReporterScore).filter(
+            ReporterScore.reporter_id == user_id
+        ).update({"reporter_id": ANONYMOUS_USER_ID}, synchronize_session=False)
+
+        # Remove SeenUser record (allows fresh welcome if they re-engage)
+        self.db.query(SeenUser).filter(
+            SeenUser.user_id == user_id
+        ).delete(synchronize_session=False)
+
+        self.db.commit()
+
+        return tmpl.stop_confirmation(total_subs)
 
     # ---- first-contact detection ----
 

@@ -3,9 +3,12 @@
 Endpoints:
   POST /webhook/whatsapp  - Twilio inbound webhook (form-encoded: From, Body).
                             Replies with TwiML so Twilio sends the answer back.
-  GET  /admin             - minimal HTML admin view
+  GET  /admin             - minimal HTML admin view (HTTP Basic Auth protected)
   GET  /health            - liveness
 """
+import base64
+import logging
+import os
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -19,6 +22,18 @@ from app.models.models import Base
 from app.services.bot_router import BotRouter
 from app.services.notifier import get_notifier
 from app.admin.views import render_admin
+
+logger = logging.getLogger("araha.main")
+
+# Admin credentials - read from env, no hardcoded defaults
+ADMIN_USER = os.getenv("ADMIN_USER")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD")
+
+if not ADMIN_USER or not ADMIN_PASSWORD:
+    logger.warning(
+        "ADMIN_USER / ADMIN_PASSWORD not set - /admin is running UNPROTECTED. "
+        "Set these env vars before any public-facing deployment."
+    )
 
 def _migrate_target_date():
     """Add target_date column to subscriptions table if it doesn't exist."""
@@ -82,6 +97,33 @@ async def whatsapp_webhook(
     return _twiml(reply)
 
 
+def _check_admin_auth(request: Request) -> bool:
+    """Validate HTTP Basic Auth credentials for admin routes.
+
+    Returns True if credentials are valid, or if auth is disabled (no env vars set).
+    Returns False if credentials are set but invalid.
+    """
+    if not ADMIN_USER or not ADMIN_PASSWORD:
+        return True  # auth disabled - warning logged at startup
+
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Basic "):
+        return False
+
+    try:
+        decoded = base64.b64decode(auth_header[6:]).decode("utf-8")
+        user, password = decoded.split(":", 1)
+        return user == ADMIN_USER and password == ADMIN_PASSWORD
+    except Exception:
+        return False
+
+
 @app.get("/admin", response_class=HTMLResponse)
-def admin(db: Session = Depends(get_db)):
+def admin(request: Request, db: Session = Depends(get_db)):
+    if not _check_admin_auth(request):
+        return HTMLResponse(
+            "<h1>401 Unauthorized</h1><p>Invalid credentials.</p>",
+            status_code=401,
+            headers={"WWW-Authenticate": 'Basic realm="Araha Admin"'}
+        )
     return render_admin(db)
