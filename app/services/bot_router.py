@@ -31,6 +31,7 @@ from app.utils.parser import MessageParser
 from app.utils.intent_parser import parse_intent, Intent, resolve_iata
 from app.utils.llm_parser import parse_with_llm
 from app.utils import notify_templates as tmpl
+from app.utils.data_deletion import delete_user_data
 
 HELP_TEXT = (
     "Araha — Nigeria's Flight Fare Tracker\n\n"
@@ -43,12 +44,16 @@ HELP_TEXT = (
     "  SUBSCRIBE LOS ABV 2026-08-15 [target]\n"
     "  FARE LOS ABV [date]\n"
     "  TRACK P47123 2026-07-20\n\n"
-    "  STOP — unsubscribe from all alerts and delete your data\n\n"
+    "  UNSUBSCRIBE — remove all alerts and delete your data\n\n"
     "HELP — this message"
 )
 
-# STOP command variants (NDPA compliance - user can request data removal)
-STOP_COMMANDS = {"STOP", "UNSUBSCRIBE", "CANCEL", "QUIT", "REMOVE"}
+# STOP command variants that reach our webhook (NDPA compliance).
+# NOTE: The literal word "STOP" is intercepted by Twilio at the platform
+# level and never reaches our webhook. We rely on:
+#   1. Twilio's opt-out callback (/webhook/optout) for platform-level STOP
+#   2. These keywords as direct webhook fallbacks that users can type
+STOP_COMMANDS = {"UNSUBSCRIBE", "CANCEL", "QUIT", "REMOVE"}
 
 # Anonymized user_id placeholder after STOP
 ANONYMOUS_USER_ID = "[deleted]"
@@ -476,52 +481,17 @@ class BotRouter:
     def _handle_stop(self, user_id: str) -> str:
         """Unsubscribe the user from ALL alerts and anonymize their data.
 
-        NDPA-compliant data removal:
-        - Deletes all fare subscriptions and flight-tracking subscriptions
-        - Anonymizes user_id in alert history and status reports
-        - Removes the SeenUser record (resets first-contact status)
-        - Deletes ReporterScore record if present
+        Uses the shared delete_user_data() utility for consistent behavior
+        across both direct commands and Twilio opt-out webhooks.
 
-        Idempotent: sending STOP when already unsubscribed doesn't error.
+        Note: The literal word "STOP" is intercepted by Twilio at the
+        platform level (see main.py /webhook/optout). This handler covers
+        alternative keywords (UNSUBSCRIBE, CANCEL, QUIT, REMOVE) that
+        DO reach our webhook.
+
+        Idempotent: sending when already unsubscribed doesn't error.
         """
-        # Count before deletion for the confirmation message
-        fare_subs = self.db.query(UserSubscription).filter(
-            UserSubscription.user_id == user_id,
-            UserSubscription.route_id.isnot(None)
-        ).all()
-        flight_subs = self.db.query(UserSubscription).filter(
-            UserSubscription.user_id == user_id,
-            UserSubscription.flight_id.isnot(None)
-        ).all()
-        total_subs = len(fare_subs) + len(flight_subs)
-
-        # Delete all subscriptions
-        self.db.query(UserSubscription).filter(
-            UserSubscription.user_id == user_id
-        ).delete(synchronize_session=False)
-
-        # Anonymize alert history (replace user_id with [deleted])
-        self.db.query(AlertHistory).filter(
-            AlertHistory.user_id == user_id
-        ).update({"user_id": ANONYMOUS_USER_ID}, synchronize_session=False)
-
-        # Anonymize status reports (replace reporter_id with [deleted])
-        self.db.query(StatusReport).filter(
-            StatusReport.reporter_id == user_id
-        ).update({"reporter_id": ANONYMOUS_USER_ID}, synchronize_session=False)
-
-        # Anonymize reporter score
-        self.db.query(ReporterScore).filter(
-            ReporterScore.reporter_id == user_id
-        ).update({"reporter_id": ANONYMOUS_USER_ID}, synchronize_session=False)
-
-        # Remove SeenUser record (allows fresh welcome if they re-engage)
-        self.db.query(SeenUser).filter(
-            SeenUser.user_id == user_id
-        ).delete(synchronize_session=False)
-
-        self.db.commit()
-
+        total_subs = delete_user_data(self.db, user_id, ANONYMOUS_USER_ID)
         return tmpl.stop_confirmation(total_subs)
 
     # ---- first-contact detection ----

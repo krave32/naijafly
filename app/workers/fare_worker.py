@@ -131,6 +131,10 @@ def run_cycle(db=None, ingestor=None, notifier=None):
 
         total_alerts = 0
         total_fares = 0
+        # Cross-date dedup: prevent the same user from getting multiple alerts
+        # for the same route across different sampled dates within one cycle.
+        # Set of (user_id, route_id) tuples.
+        cross_date_alerted: set = set()
         for route_id, dates in route_dates.items():
             route = db.query(Route).get(route_id)
             if not route:
@@ -140,7 +144,8 @@ def run_cycle(db=None, ingestor=None, notifier=None):
             for travel_date in sorted(dates):
                 fares = ingestor.fetch_fares(
                     route.origin, route.destination, travel_date)
-                n = service.process_new_fares(route_id, fares)
+                n = service.process_new_fares(route_id, fares,
+                                              cross_date_alerted=cross_date_alerted)
                 route_alerts += n
                 route_fares += len(fares)
             total_alerts += route_alerts

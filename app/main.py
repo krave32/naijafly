@@ -3,6 +3,9 @@
 Endpoints:
   POST /webhook/whatsapp  - Twilio inbound webhook (form-encoded: From, Body).
                             Replies with TwiML so Twilio sends the answer back.
+  POST /webhook/optout    - Twilio opt-out callback (STOP intercepted at platform
+                            level). Triggers NDPA-compliant data deletion.
+  POST /webhook/optin     - Twilio opt-in callback (START after opt-out).
   GET  /admin             - minimal HTML admin view (HTTP Basic Auth protected)
   GET  /health            - liveness
 """
@@ -18,10 +21,11 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 
 from app.core.database import engine, get_db
-from app.models.models import Base
+from app.models.models import Base, SeenUser
 from app.services.bot_router import BotRouter
 from app.services.notifier import get_notifier
 from app.admin.views import render_admin
+from app.utils.data_deletion import delete_user_data
 
 logger = logging.getLogger("araha.main")
 
@@ -95,6 +99,45 @@ async def whatsapp_webhook(
     router = BotRouter(db, notifier=get_notifier())
     reply = router.handle(user_id, Body)
     return _twiml(reply)
+
+
+@app.post("/webhook/optout")
+async def opt_out_webhook(
+    From: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    """Twilio Opt-Out Management callback.
+
+    Called when a user sends STOP (or other platform-reserved opt-out keyword).
+    Twilio intercepts these at the platform level, so they never reach
+    /webhook/whatsapp. This endpoint ensures NDPA-compliant data deletion.
+
+    Configure in Twilio Console: Messaging -> Settings -> WhatsApp Sandbox Settings
+    -> Opt-out management -> set URL to this endpoint.
+    """
+    user_id = From.replace("whatsapp:", "")
+    removed = delete_user_data(db, user_id)
+    logger.info("Opt-out webhook: user=%s, removed %d subscriptions", user_id, removed)
+    return {"status": "ok", "user": user_id, "subscriptions_removed": removed}
+
+
+@app.post("/webhook/optin")
+async def opt_in_webhook(
+    From: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    """Twilio Opt-In Management callback.
+
+    Called when a user sends START after previously opting out.
+    Re-creates the SeenUser record so the welcome flow works again.
+    """
+    user_id = From.replace("whatsapp:", "")
+    # Re-create SeenUser so the welcome intro works for returning users
+    if not db.query(SeenUser).filter_by(user_id=user_id).first():
+        db.add(SeenUser(user_id=user_id))
+        db.commit()
+    logger.info("Opt-in webhook: user=%s", user_id)
+    return {"status": "ok", "user": user_id}
 
 
 def _check_admin_auth(request: Request) -> bool:

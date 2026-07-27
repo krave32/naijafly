@@ -139,8 +139,8 @@ def welcome_intro() -> str:
         "  TRACK P47123 2026-07-25\n\n"
         "Type HELP anytime for the full command list.\n\n"
         "\U0001f512 Your data: we store your phone number, subscribed routes, and "
-        "any flight statuses you report. Send STOP anytime to unsubscribe and "
-        "have your data removed."
+        "any flight statuses you report. Send UNSUBSCRIBE anytime to remove "
+        "all alerts and delete your data."
     )
 
 

@@ -31,17 +31,19 @@ we collect, why, how long we keep it, and how to have it removed.
 - Aggregate status reports from multiple passengers to confirm real-time flight status
 - Prevent abuse (rate limiting, spam detection)
 
-## Your rights — send STOP to remove your data
+## Your rights — how to remove your data
 
-At any time, send **STOP** (or **UNSUBSCRIBE**, **CANCEL**, **QUIT**, **REMOVE**) to the Araha WhatsApp number. This will:
+At any time, send **UNSUBSCRIBE** (or **CANCEL**, **QUIT**, **REMOVE**) to the Araha WhatsApp number. This will:
 
 1. **Delete** all your fare subscriptions and flight-tracking subscriptions
 2. **Anonymize** your phone number in alert history, status reports, and reporter scores (replaced with `[deleted]`)
 3. **Remove** your first-contact record (you'll see the welcome message again if you return)
 
-After STOP, your phone number is no longer tied to any personal data in our system. Anonymized historical records are kept in aggregate form for system integrity (e.g., status report accuracy), but cannot be linked back to you.
+**About the word "STOP":** Twilio and WhatsApp intercept the literal word STOP at the platform level before it reaches our bot. When you send STOP, Twilio's own opt-out system is triggered automatically, AND our server receives a callback that deletes your data. So STOP still works for data removal — but if for any reason it doesn't trigger our callback, sending **UNSUBSCRIBE** guarantees full data deletion.
 
-If you change your mind, just text **HI** to start using Araha again.
+After unsubscribing, your phone number is no longer tied to any personal data in our system. Anonymized historical records are kept in aggregate form for system integrity (e.g., status report accuracy), but cannot be linked back to you.
+
+If you change your mind, just text **HI** (or send **START** if you previously opted out) to start using Araha again.
 
 ## Data security
 

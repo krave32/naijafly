@@ -1,12 +1,13 @@
-"""Safety tests: admin auth, STOP/unsubscribe, NDPA data anonymization.
+"""Safety tests: admin auth, unsubscribe, NDPA data anonymization.
 
 Validates:
   1. Admin route returns 401 without valid credentials, 200 with them
-  2. STOP removes all subscriptions for that user, confirmed via DB query
-  3. STOP is idempotent (no error on a user with nothing to remove)
-  4. STOP variants ("unsubscribe", "cancel") all route to the same handler
-  5. Historical data anonymization after STOP
+  2. UNSUBSCRIBE removes all subscriptions for that user, confirmed via DB query
+  3. UNSUBSCRIBE is idempotent (no error on a user with nothing to remove)
+  4. Unsubscribe variants ("unsubscribe", "cancel") all route to the same handler
+  5. Historical data anonymization after UNSUBSCRIBE
   6. Privacy notice present in onboarding message
+  7. "STOP" is NOT in STOP_COMMANDS (Twilio intercepts it at platform level)
 """
 import base64
 import os
@@ -121,8 +122,13 @@ class TestAdminAuth:
 class TestStopCommand:
     """STOP/unsubscribe command tests."""
 
-    def test_stop_removes_all_subscriptions(self):
-        """STOP removes all fare and flight subscriptions for the user."""
+    def test_stop_not_in_stop_commands(self):
+        """'STOP' is NOT in STOP_COMMANDS — Twilio intercepts it at platform level."""
+        from app.services.bot_router import STOP_COMMANDS
+        assert "STOP" not in STOP_COMMANDS
+
+    def test_unsubscribe_removes_all_subscriptions(self):
+        """UNSUBSCRIBE removes all fare and flight subscriptions for the user."""
         router, db = _router()
         user = "whatsapp:stop_user_1"
 
@@ -135,8 +141,8 @@ class TestStopCommand:
         subs_before = db.query(UserSubscription).filter_by(user_id=user).count()
         assert subs_before == 3
 
-        # Send STOP
-        reply = router.handle(user, "STOP")
+        # Send UNSUBSCRIBE
+        reply = router.handle(user, "UNSUBSCRIBE")
 
         # Verify all subscriptions removed
         subs_after = db.query(UserSubscription).filter_by(user_id=user).count()
@@ -146,19 +152,19 @@ class TestStopCommand:
         assert "unsubscribed" in reply.lower() or "no active" in reply.lower()
         assert "3" in reply  # mentions count removed
 
-    def test_stop_is_idempotent(self):
-        """Sending STOP when already unsubscribed doesn't error."""
+    def test_unsubscribe_is_idempotent(self):
+        """Sending UNSUBSCRIBE when already unsubscribed doesn't error."""
         router, db = _router()
         user = "whatsapp:stop_idempotent"
 
-        # Send STOP without any subscriptions
-        reply = router.handle(user, "STOP")
+        # Send UNSUBSCRIBE without any subscriptions
+        reply = router.handle(user, "UNSUBSCRIBE")
 
         # Should get a confirmation, not an error
         assert "no active subscriptions" in reply.lower() or "removed" in reply.lower()
 
-        # Send STOP again
-        reply2 = router.handle(user, "STOP")
+        # Send UNSUBSCRIBE again
+        reply2 = router.handle(user, "UNSUBSCRIBE")
         assert "no active subscriptions" in reply2.lower() or "removed" in reply2.lower()
 
     def test_stop_variants_unsubscribe(self):
@@ -203,10 +209,10 @@ class TestStopCommand:
         subs = db.query(UserSubscription).filter_by(user_id=user).count()
         assert subs == 0
 
-    def test_stop_case_insensitive(self):
-        """STOP command is case-insensitive."""
+    def test_unsubscribe_case_insensitive(self):
+        """UNSUBSCRIBE command is case-insensitive."""
         router, db = _router()
-        for cmd in ["stop", "STOP", "Stop", "sToP"]:
+        for cmd in ["unsubscribe", "UNSUBSCRIBE", "Unsubscribe", "uNsUbScRiBe"]:
             user = f"whatsapp:stop_case_{cmd}"
             router.handle(user, "SUBSCRIBE LOS ABV 80000")
             router.handle(user, cmd)
@@ -219,8 +225,8 @@ class TestStopCommand:
 class TestDataAnonymization:
     """Tests for data anonymization after STOP (NDPA compliance)."""
 
-    def test_alert_history_anonymized_after_stop(self):
-        """Alert history user_id is replaced with [deleted] after STOP."""
+    def test_alert_history_anonymized_after_unsubscribe(self):
+        """Alert history user_id is replaced with [deleted] after UNSUBSCRIBE."""
         router, db = _router()
         user = "whatsapp:anon_user_1"
 
@@ -240,8 +246,8 @@ class TestDataAnonymization:
         alert_before = db.query(AlertHistory).filter_by(user_id=user).first()
         assert alert_before is not None
 
-        # Send STOP
-        router.handle(user, "STOP")
+        # Send UNSUBSCRIBE
+        router.handle(user, "UNSUBSCRIBE")
 
         # Verify alert is anonymized (user_id replaced)
         alert_anon = db.query(AlertHistory).filter_by(user_id=user).first()
@@ -251,8 +257,8 @@ class TestDataAnonymization:
         assert alert_deleted is not None
         assert alert_deleted.message == "Price drop LOS->ABV"  # content preserved
 
-    def test_status_reports_anonymized_after_stop(self):
-        """Status report reporter_id is replaced with [deleted] after STOP."""
+    def test_status_reports_anonymized_after_unsubscribe(self):
+        """Status report reporter_id is replaced with [deleted] after UNSUBSCRIBE."""
         router, db = _router()
         user = "whatsapp:anon_user_2"
 
@@ -273,8 +279,8 @@ class TestDataAnonymization:
         report_before = db.query(StatusReport).filter_by(reporter_id=user).first()
         assert report_before is not None
 
-        # Send STOP
-        router.handle(user, "STOP")
+        # Send UNSUBSCRIBE
+        router.handle(user, "UNSUBSCRIBE")
 
         # Verify report is anonymized
         report_orig = db.query(StatusReport).filter_by(reporter_id=user).first()
@@ -284,8 +290,8 @@ class TestDataAnonymization:
         assert report_anon is not None
         assert report_anon.gate == "12"  # content preserved
 
-    def test_reporter_score_anonymized_after_stop(self):
-        """Reporter score reporter_id is replaced with [deleted] after STOP."""
+    def test_reporter_score_anonymized_after_unsubscribe(self):
+        """Reporter score reporter_id is replaced with [deleted] after UNSUBSCRIBE."""
         router, db = _router()
         user = "whatsapp:anon_user_3"
 
@@ -301,8 +307,8 @@ class TestDataAnonymization:
         score_before = db.query(ReporterScore).filter_by(reporter_id=user).first()
         assert score_before is not None
 
-        # Send STOP
-        router.handle(user, "STOP")
+        # Send UNSUBSCRIBE
+        router.handle(user, "UNSUBSCRIBE")
 
         # Verify score is anonymized
         score_orig = db.query(ReporterScore).filter_by(reporter_id=user).first()
@@ -312,8 +318,8 @@ class TestDataAnonymization:
         assert score_anon is not None
         assert score_anon.total_reports == 5  # data preserved
 
-    def test_seen_user_removed_after_stop(self):
-        """SeenUser record is removed after STOP (allows fresh welcome)."""
+    def test_seen_user_removed_after_unsubscribe(self):
+        """SeenUser record is removed after UNSUBSCRIBE (allows fresh welcome)."""
         router, db = _router()
         user = "whatsapp:anon_user_4"
 
@@ -322,23 +328,23 @@ class TestDataAnonymization:
         seen_before = db.query(SeenUser).filter_by(user_id=user).first()
         assert seen_before is not None
 
-        # Send STOP
-        router.handle(user, "STOP")
+        # Send UNSUBSCRIBE
+        router.handle(user, "UNSUBSCRIBE")
 
         # SeenUser should be removed
         seen_after = db.query(SeenUser).filter_by(user_id=user).first()
         assert seen_after is None
 
-    def test_welcome_shown_again_after_stop(self):
-        """After STOP, user sees welcome intro again on next message."""
+    def test_welcome_shown_again_after_unsubscribe(self):
+        """After UNSUBSCRIBE, user sees welcome intro again on next message."""
         router, db = _router()
         user = "whatsapp:anon_user_5"
 
         # First interaction
         router.handle(user, "SUBSCRIBE LOS ABV 80000")
 
-        # Send STOP
-        router.handle(user, "STOP")
+        # Send UNSUBSCRIBE
+        router.handle(user, "UNSUBSCRIBE")
 
         # Next unrecognized message should show welcome intro again
         reply = router.handle(user, "random gibberish")
@@ -357,8 +363,8 @@ class TestPrivacyNotice:
 
         # Should mention data collection
         assert "data" in reply.lower() or "phone" in reply.lower()
-        # Should mention STOP
-        assert "STOP" in reply
+        # Should mention UNSUBSCRIBE (not STOP, which Twilio intercepts)
+        assert "UNSUBSCRIBE" in reply
 
     def test_welcome_mentions_what_is_collected(self):
         """Welcome intro mentions what data is collected."""
@@ -367,10 +373,10 @@ class TestPrivacyNotice:
         assert "phone" in intro.lower() or "number" in intro.lower()
         assert "route" in intro.lower() or "subscrib" in intro.lower()
 
-    def test_welcome_mentions_stop_for_removal(self):
-        """Welcome intro mentions STOP as data removal option."""
+    def test_welcome_mentions_unsubscribe_for_removal(self):
+        """Welcome intro mentions UNSUBSCRIBE as data removal option."""
         intro = tmpl.welcome_intro()
-        assert "STOP" in intro
+        assert "UNSUBSCRIBE" in intro
         assert "remove" in intro.lower() or "delete" in intro.lower()
 
     def test_stop_confirmation_mentions_resubscribe(self):

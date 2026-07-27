@@ -67,7 +67,7 @@ nothing else changes.
 | `TRACK P47123 2026-07-20` | Live boarding/gate/delay pushes for that flight |
 | `boarding now gate 12` (while tracking) | Files a status report |
 | `HELP` | Command list |
-| `STOP` | Unsubscribe from ALL alerts and remove your data |
+| `UNSUBSCRIBE` | Remove all alerts and delete your data |
 
 ### Date-aware fares
 
@@ -177,10 +177,27 @@ See [PRIVACY.md](PRIVACY.md) for the full privacy policy.
 **Summary:**
 - **Collected:** phone number, subscribed routes, reported flight statuses
 - **Not collected:** name, email, payment info, location
-- **Removal:** Send `STOP` to unsubscribe from all alerts and have your personal
-  data deleted/anonymized. Historical records are anonymized (phone number
-  replaced with `[deleted]`) rather than kept tied to your identity.
+- **Removal:** Send `UNSUBSCRIBE` (or `CANCEL`, `QUIT`, `REMOVE`) to remove
+  all alerts and have your personal data deleted/anonymized. The literal
+  word `STOP` is intercepted by Twilio at the platform level — our
+  `/webhook/optout` endpoint receives a callback to handle data deletion.
+- Historical records are anonymized (phone number replaced with `[deleted]`)
+  rather than kept tied to your identity.
 - The onboarding message includes a data-use notice per NDPA requirements.
+
+### Twilio opt-out webhook setup
+
+Twilio intercepts `STOP`, `START`, `HELP`, and `UNSUBSCRIBE` at the platform
+level. To ensure our database cleanup runs when a user opts out:
+
+1. In Twilio Console → Messaging → Settings → WhatsApp Sandbox Settings
+2. Set **Opt-out management** URL to:
+   `https://endearing-celebration-production-f9f3.up.railway.app/webhook/optout`
+3. Set **Opt-in management** URL to:
+   `https://endearing-celebration-production-f9f3.up.railway.app/webhook/optin`
+
+This guarantees NDPA-compliant data deletion even though `STOP` never
+reaches our `/webhook/whatsapp` endpoint.
 
 ## Notification emoji scheme (centralized in notify_templates.py)
 
@@ -220,11 +237,13 @@ See [PRIVACY.md](PRIVACY.md) for the full privacy policy.
 cd araha && python -m pytest tests -v
 ```
 
-**159 passing** — covers: fare ingestion (mock + Amadeus + Google Flights safety
+**226 passing** — covers: fare ingestion (mock + Amadeus + Google Flights safety
 filter), FX conversion, price-alert triggering (date-aware), status parsing,
 confirmation/dispute/majority-wins, emoji templates, FARE_SOURCE toggle, Dana Air
 removal, rolling-window sampling, specific-date subscriptions, date-scoped queries,
-command parsing with dates, implausible-airline filtering, and conversation state.
+command parsing with dates, implausible-airline filtering, conversation state,
+admin authentication, unsubscribe/NDPA data anonymization, onboarding flow,
+cross-date alert deduplication, and Twilio platform-level STOP interception.
 
 ## What's REAL vs MOCKED
 

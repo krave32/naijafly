@@ -39,7 +39,8 @@ class FareService:
         self.fx = FXService(db)
         self.notifier = notifier
 
-    def process_new_fares(self, route_id: int, fares_data: List[dict]) -> int:
+    def process_new_fares(self, route_id: int, fares_data: List[dict],
+                          cross_date_alerted: set = None) -> int:
         """Ingest a batch of fares; returns number of alerts pushed.
 
         Date-aware: prev_min/prev_avg are scoped to the SAME flight_date as
@@ -51,6 +52,12 @@ class FareService:
         Only a fare that is strictly cheaper than every fare seen so far
         (including earlier fares in this same batch) can trigger an alert.
         This means at most ONE alert per subscription per cycle.
+
+        Args:
+            cross_date_alerted: Optional set of (user_id, route_id) tuples
+                already alerted in earlier dates of the SAME worker cycle.
+                Prevents duplicate alerts across sampled dates for the same
+                rolling-window subscription within a single cycle.
         """
         if not fares_data:
             return 0
@@ -81,6 +88,12 @@ class FareService:
         # Running minimum starts at the historical minimum for this date (or infinity).
         running_min = prev_min if prev_min is not None else float("inf")
         alerted_users_this_batch: set = set()  # dedup within this batch
+        # Merge cross-date alerted set so the same user isn't alerted for
+        # different sampled dates within the same worker cycle.
+        if cross_date_alerted:
+            alerted_users_this_batch.update(
+                uid for uid, rid in cross_date_alerted if rid == route_id
+            )
 
         # Build a date label for push messages
         date_label = ""
@@ -101,7 +114,8 @@ class FareService:
 
             n = self.check_for_alerts(
                 fare, running_min, prev_avg, alerted_users_this_batch,
-                date_label=date_label)
+                date_label=date_label,
+                cross_date_alerted=cross_date_alerted)
             alerts_sent += n
 
             # Update running minimum so subsequent fares in this batch must
@@ -109,12 +123,16 @@ class FareService:
             if fare.price < running_min:
                 running_min = fare.price
 
+        # Propagate alerted users back to caller for cross-date dedup
+        # (already done in check_for_alerts via cross_date_alerted param)
+
         return alerts_sent
 
     def check_for_alerts(
         self, new_fare: Fare, running_min, prev_avg,
         alerted_users_this_batch: set = None,
         date_label: str = "",
+        cross_date_alerted: set = None,
     ) -> int:
         """Check if this fare triggers an alert for any subscription.
 
@@ -186,6 +204,8 @@ class FareService:
                 user_id=sub.user_id, alert_type="fare_drop",
                 route_id=new_fare.route_id, message=body, delivered=bool(ok)))
             alerted_users_this_batch.add(sub.user_id)
+            if cross_date_alerted is not None:
+                cross_date_alerted.add((sub.user_id, new_fare.route_id))
             sent += 1
 
         self.db.commit()
