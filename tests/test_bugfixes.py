@@ -483,3 +483,160 @@ class TestPrivacyTextAccuracy:
         assert "phone" in intro.lower() or "number" in intro.lower()
         # Should mention routes or subscriptions
         assert "route" in intro.lower() or "subscrib" in intro.lower()
+
+
+class TestCooldownScoping:
+    """Verify alert cooldown is scoped per (user, route), not global."""
+
+    def _setup(self, db, route_origin="LOS", route_dest="ABV"):
+        """Create a route and a subscription. Returns (route, sub)."""
+        from app.models.models import Route, UserSubscription
+        route = Route(origin=route_origin, destination=route_dest)
+        db.add(route)
+        db.commit()
+        sub = UserSubscription(user_id="+2348000000001", route_id=route.id)
+        db.add(sub)
+        db.commit()
+        return route, sub
+
+    def test_cooldown_blocks_same_route(self):
+        """Same (user, route) should not get a second alert within cooldown."""
+        from app.services.fare_service import FareService
+        from app.models.models import Fare, AlertHistory
+        from sqlalchemy import create_engine
+        from sqlalchemy.orm import sessionmaker
+        from datetime import datetime
+
+        engine = create_engine("sqlite:///:memory:")
+        Base.metadata.create_all(engine)
+        db = sessionmaker(bind=engine)()
+        service = FareService(db, notifier=None)
+
+        route, _ = self._setup(db)
+
+        # Insert a fare below the running min to trigger alert
+        fare1 = Fare(route_id=route.id, price=50000, currency="NGN",
+                     source="Test", flight_date=datetime.utcnow())
+        db.add(fare1)
+        db.commit()
+
+        # First alert should send
+        n1 = service.check_for_alerts(
+            fare1, running_min=float("inf"), prev_avg=100000)
+        assert n1 == 1, "First alert should send"
+
+        # Second alert for same (user, route) should be blocked by cooldown
+        fare2 = Fare(route_id=route.id, price=40000, currency="NGN",
+                     source="Test", flight_date=datetime.utcnow())
+        db.add(fare2)
+        db.commit()
+
+        n2 = service.check_for_alerts(
+            fare2, running_min=40000, prev_avg=100000)
+        assert n2 == 0, "Second alert for same (user, route) should be blocked by cooldown"
+
+    def test_cooldown_allows_different_route(self):
+        """Different route for the same user should NOT be blocked."""
+        from app.services.fare_service import FareService
+        from app.models.models import Fare, AlertHistory
+        from sqlalchemy import create_engine
+        from sqlalchemy.orm import sessionmaker
+        from datetime import datetime
+
+        engine = create_engine("sqlite:///:memory:")
+        Base.metadata.create_all(engine)
+        db = sessionmaker(bind=engine)()
+        service = FareService(db, notifier=None)
+
+        route1, _ = self._setup(db, "LOS", "ABV")
+        route2, _ = self._setup(db, "LOS", "PHC")
+
+        # Trigger alert on route1
+        fare1 = Fare(route_id=route1.id, price=50000, currency="NGN",
+                     source="Test", flight_date=datetime.utcnow())
+        db.add(fare1)
+        db.commit()
+        n1 = service.check_for_alerts(
+            fare1, running_min=float("inf"), prev_avg=100000)
+        assert n1 == 1
+
+        # Different route should NOT be blocked by cooldown
+        fare2 = Fare(route_id=route2.id, price=40000, currency="NGN",
+                     source="Test", flight_date=datetime.utcnow())
+        db.add(fare2)
+        db.commit()
+        n2 = service.check_for_alerts(
+            fare2, running_min=float("inf"), prev_avg=100000)
+        assert n2 == 1, "Different route should not be blocked by cooldown"
+
+    def test_cooldown_allows_different_user_same_route(self):
+        """Same route, different user should NOT be blocked by another user's cooldown."""
+        from app.services.fare_service import FareService
+        from app.models.models import Fare, AlertHistory, UserSubscription
+        from sqlalchemy import create_engine
+        from sqlalchemy.orm import sessionmaker
+        from datetime import datetime
+
+        engine = create_engine("sqlite:///:memory:")
+        Base.metadata.create_all(engine)
+        db = sessionmaker(bind=engine)()
+        service = FareService(db, notifier=None)
+
+        route, _ = self._setup(db, "LOS", "ABV")
+
+        # User1 gets alerted — creates AlertHistory entry with cooldown
+        fare1 = Fare(route_id=route.id, price=50000, currency="NGN",
+                     source="Test", flight_date=datetime.utcnow())
+        db.add(fare1)
+        db.commit()
+        n1 = service.check_for_alerts(
+            fare1, running_min=float("inf"), prev_avg=100000)
+        assert n1 == 1  # alerts user1 only (no user2 yet)
+
+        # NOW add user2 subscription (after user1's cooldown started)
+        sub2 = UserSubscription(user_id="+2348000000002", route_id=route.id)
+        db.add(sub2)
+        db.commit()
+
+        # User2 should get alerted — user1's cooldown is per-user
+        # Price must be strictly less than running_min (which is fare1's price of 50000 here)
+        fare2 = Fare(route_id=route.id, price=40000, currency="NGN",
+                     source="Test", flight_date=datetime.utcnow())
+        db.add(fare2)
+        db.commit()
+        n2 = service.check_for_alerts(
+            fare2, running_min=50000, prev_avg=100000)
+        assert n2 == 1, "Different user on same route should not be blocked by user1's cooldown"
+
+    def test_cooldown_resets_after_window(self):
+        """After cooldown window expires, same (user, route) should alert again."""
+        from app.services.fare_service import FareService, ALERT_COOLDOWN_MINUTES
+        from app.models.models import Fare, AlertHistory
+        from sqlalchemy import create_engine
+        from sqlalchemy.orm import sessionmaker
+        from datetime import datetime, timedelta
+        from unittest.mock import patch
+
+        engine = create_engine("sqlite:///:memory:")
+        Base.metadata.create_all(engine)
+        db = sessionmaker(bind=engine)()
+        service = FareService(db, notifier=None)
+
+        route, _ = self._setup(db)
+
+        # Insert an old AlertHistory entry (outside cooldown window)
+        old_time = datetime.utcnow() - timedelta(minutes=ALERT_COOLDOWN_MINUTES + 1)
+        db.add(AlertHistory(
+            user_id="+2348000000001", alert_type="fare_drop",
+            route_id=route.id, message="test", delivered=True,
+            created_at=old_time))
+        db.commit()
+
+        # New fare should trigger alert since cooldown has expired
+        fare = Fare(route_id=route.id, price=50000, currency="NGN",
+                    source="Test", flight_date=datetime.utcnow())
+        db.add(fare)
+        db.commit()
+        n = service.check_for_alerts(
+            fare, running_min=float("inf"), prev_avg=100000)
+        assert n == 1, "Alert should fire after cooldown window expires"

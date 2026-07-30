@@ -1,0 +1,31 @@
+{
+  "project": "Araha",
+  "active_phase": 3,
+  "active_phase_label": "Production Readiness & Hardening",
+  "stack": ["FastAPI", "SQLAlchemy", "PostgreSQL", "APScheduler", "Twilio", "Docker", "Railway"],
+  "language": "Python",
+  "whats_real": [
+    "Twilio WhatsApp inbound webhook",
+    "Twilio WhatsApp outbound pushes",
+    "APScheduler fare polling worker",
+    "Boarding-status confirm/push loop",
+    "FX rate ingestion (open.er-api.com)",
+    "Admin dashboard (HTTP Basic Auth)",
+    "Google Flights fare ingestion (fli library)",
+    "226 passing tests"
+  ],
+  "whats_not_done": [
+    "Production WhatsApp Business API approval (sandbox only)",
+    "Google Flights rate-limit hardening",
+    "fli legal review (Google ToS)"
+  ],
+  "next_task": "Implement rate-limit hardening in GoogleFlightsIngestor (exponential backoff, configurable rate cap)",
+  "sec_files": {
+    "BUILD_CONTEXT": "docs/BUILD_CONTEXT.md",
+    "NEXT_STEPS": "docs/NEXT_STEPS.md",
+    "TASK_BOARD": "docs/TASK_BOARD.md",
+    "PHASE_RULES": "docs/PHASE_RULES.md",
+    "DEV_RULES": "docs/DEV_RULES.md",
+    "DEFINITION_OF_DONE": "docs/DEFINITION_OF_DONE.md"
+  }
+}

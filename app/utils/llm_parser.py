@@ -32,17 +32,20 @@ Valid airports (IATA codes): {', '.join(sorted(VALID_AIRPORTS))}
 Today's date: {{today}}
 
 Return ONLY a JSON object with these fields:
-- "action": one of "fare_query", "subscribe", "help", "track", or null
+- "action": one of "fare_query", "subscribe", "help", "track", "airline_request", "airline_list", or null
 - "origin": IATA airport code (3 letters) or null
 - "destination": IATA airport code (3 letters) or null
 - "date": ISO date string (YYYY-MM-DD) or null
 - "target_price": number (in NGN) or null
+- "airline": airline name the user wants tracked (string) or null
 
 Rules:
 - "fare_query" = user wants to know the cheapest/current fare price
 - "subscribe" = user wants alerts when prices drop
 - "help" = user is asking what the bot can do, or greeting
 - "track" = user wants boarding/status updates for a specific flight
+- "airline_request" = user wants us to track/add a specific AIRLINE (e.g. "can you track Xejet?") — set "airline"
+- "airline_list" = user asks which airlines we track/cover
 - If the user mentions only one city, treat it as the destination (origin unknown)
 - Convert city names to IATA codes: Lagos=LOS, Abuja=ABV, Port Harcourt=PHC,
   Enugu=ENU, Benin=BNI, Kano=KAN, Calabar=CBQ, Ilorin=ILR, Owerri=QOW
@@ -113,7 +116,8 @@ def parse_with_llm(text: str) -> Optional[Intent]:
 def _build_intent(result: dict, raw_text: str) -> Optional[Intent]:
     """Convert LLM JSON response into an Intent."""
     action = result.get("action")
-    if action not in {"fare_query", "subscribe", "help", "track", None}:
+    if action not in {"fare_query", "subscribe", "help", "track",
+                      "airline_request", "airline_list", None}:
         logger.warning("LLM returned unknown action: %s", action)
         action = None
 
@@ -140,12 +144,17 @@ def _build_intent(result: dict, raw_text: str) -> Optional[Intent]:
 
     confidence = 0.85 if action else 0.0
 
+    airline = result.get("airline")
+    if airline is not None and not isinstance(airline, str):
+        airline = None
+
     return Intent(
         action=action,
         origin=origin,
         destination=destination,
         date=date,
         target_price=target_price,
+        airline=airline.strip().title() if airline else None,
         confidence=confidence,
         raw_text=raw_text,
     )

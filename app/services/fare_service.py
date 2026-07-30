@@ -26,6 +26,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 
 from app.models.models import Fare, Route, UserSubscription, AlertHistory
+from app.services.fare_ingestor import google_flights_url
 from app.utils.fx import FXService
 from app.utils import notify_templates as tmpl
 
@@ -198,7 +199,9 @@ class FareService:
             body = tmpl.fare_drop_push(
                 route.origin, route.destination, new_fare.price,
                 new_fare.currency, usd, new_fare.source,
-                date_label=date_label)
+                date_label=date_label,
+                link=google_flights_url(route.origin, route.destination,
+                                        new_fare.flight_date))
             ok = self.notifier.send(sub.user_id, body) if self.notifier else False
             self.db.add(AlertHistory(
                 user_id=sub.user_id, alert_type="fare_drop",

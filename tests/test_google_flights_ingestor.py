@@ -16,6 +16,8 @@ from app.services.fare_ingestor import (
     GoogleFlightsIngestor, HybridIngestor, MockFareIngestor,
     get_active_ingestor, WEST_AFRICAN_AIRLINES, AIRPORT_CURRENCY,
     NIGERIAN_DOMESTIC_AIRLINES,
+    google_flights_url, get_extra_tracked_airlines,
+    get_tracked_airlines, get_allowed_airlines,
 )
 
 
@@ -97,12 +99,11 @@ def test_google_flights_exception_returns_empty():
     ingestor = GoogleFlightsIngestor()
     ingestor._fli_available = True
 
-    # Verify the contract: fetch_fares always returns a list, never raises.
-    # When _check_fli returns True but the fli import inside fetch_fares fails
-    # (e.g. ImportError at runtime), the try/except catches it and returns [].
-    fares = ingestor.fetch_fares("LOS", "ABV", datetime(2026, 8, 1))
-    # fli is not installed in test env, so _check_fli will return False
-    # and fetch_fares returns [] immediately.
+    with patch("fli.search.SearchFlights") as mock_search:
+        mock_search_instance = mock_search.return_value
+        mock_search_instance.search.side_effect = Exception("API failure")
+        fares = ingestor.fetch_fares("LOS", "ABV", datetime(2026, 8, 1))
+    # The try/except in fetch_fares should catch the exception and return []
     assert fares == []
 
 
@@ -295,3 +296,85 @@ def test_safety_filter_integration_with_ingestor():
     assert len(fares) == 1
     assert fares[0]["source"] == "Air Peace (P4) via Google Flights"
     assert fares[0]["price"] == 85000.0
+
+
+# -- Google Flights verification link tests (Part 2 feature) --
+
+
+def test_google_flights_url_route_only():
+    """Link for a route without a date points at the right search."""
+    url = google_flights_url("LOS", "ABV")
+    assert url.startswith("https://www.google.com/travel/flights?q=")
+    assert "Flights+from+LOS+to+ABV" in url
+    assert "curr=NGN" in url
+
+
+def test_google_flights_url_with_date():
+    """Link includes the travel date when one is given."""
+    url = google_flights_url("los", "enu", datetime(2026, 8, 15))
+    assert "Flights+from+LOS+to+ENU+on+2026-08-15" in url
+
+
+def test_amadeus_and_google_fares_include_link_key():
+    """Fare dicts from real ingestors carry a 'link' for user verification.
+
+    We can't hit the live APIs in tests, so this validates the mapping
+    contract: every fare dict built by GoogleFlightsIngestor/Amadeus
+    includes link=google_flights_url(origin, destination, date).
+    """
+    date = datetime(2026, 8, 1)
+    link = google_flights_url("LOS", "ABV", date)
+    fare = {
+        "price": 85000.0, "currency": "NGN",
+        "source": "Air Peace (P4) via Google Flights",
+        "flight_date": date, "link": link,
+    }
+    assert fare["link"] == link
+    assert "2026-08-01" in fare["link"]
+
+
+# -- User-suggested airline extension tests (Part 2 feature) --
+
+
+def test_extra_tracked_airlines_default_empty(monkeypatch):
+    """Without EXTRA_TRACKED_AIRLINES, extras are empty and defaults hold."""
+    monkeypatch.delenv("EXTRA_TRACKED_AIRLINES", raising=False)
+    assert get_extra_tracked_airlines() == {}
+    assert get_tracked_airlines() == WEST_AFRICAN_AIRLINES
+    assert get_allowed_airlines() == NIGERIAN_DOMESTIC_AIRLINES
+
+
+def test_extra_tracked_airlines_extends_allowlist(monkeypatch):
+    """Approved user suggestions extend both the map and the allow-list."""
+    monkeypatch.setenv("EXTRA_TRACKED_AIRLINES", "XJ:Xejet, RN:Rano Air")
+    extras = get_extra_tracked_airlines()
+    assert extras == {"XJ": "Xejet", "RN": "Rano Air"}
+    tracked = get_tracked_airlines()
+    assert tracked["XJ"] == "Xejet"
+    assert tracked["P4"] == "Air Peace"  # defaults untouched
+    allowed = get_allowed_airlines()
+    assert "XJ" in allowed and "RN" in allowed and "P4" in allowed
+    # The base allow-list constant itself is never mutated
+    assert "XJ" not in NIGERIAN_DOMESTIC_AIRLINES
+
+
+def test_extra_tracked_airlines_skips_malformed(monkeypatch):
+    """Malformed env entries are ignored, never crash the ingestor."""
+    monkeypatch.setenv(
+        "EXTRA_TRACKED_AIRLINES", "nonsense,:NoCode,XJ:,TOOLONG:Bad Code,xj:Xejet")
+    extras = get_extra_tracked_airlines()
+    assert extras == {"XJ": "Xejet"}  # lowercase code normalized, rest dropped
+
+
+def test_safety_filter_keeps_user_suggested_airline(monkeypatch):
+    """A fare from an approved user-suggested airline passes the filter."""
+    monkeypatch.setenv("EXTRA_TRACKED_AIRLINES", "XJ:Xejet")
+    allowed = get_allowed_airlines()
+    tracked = get_tracked_airlines()
+
+    flight = _mock_flight(60000.0, "XJ", "Xejet")
+    airline_code = flight.primary_airline.name
+    assert airline_code in allowed
+    assert tracked.get(airline_code) == "Xejet"
+    # And a still-unknown carrier keeps getting dropped
+    assert "WC" not in allowed

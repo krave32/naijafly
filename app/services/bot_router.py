@@ -24,8 +24,9 @@ from sqlalchemy.orm import Session
 
 logger = logging.getLogger("araha.bot_router")
 
-from app.models.models import Route, Flight, UserSubscription, StatusType, SeenUser, AlertHistory, StatusReport, ReporterScore
+from app.models.models import Route, Flight, UserSubscription, StatusType, SeenUser, AlertHistory, StatusReport, ReporterScore, AirlineRequest
 from app.services.fare_service import FareService
+from app.services.fare_ingestor import google_flights_url, get_tracked_airlines
 from app.services.status_service import StatusAggregationService
 from app.utils.parser import MessageParser
 from app.utils.intent_parser import parse_intent, Intent, resolve_iata
@@ -43,7 +44,9 @@ HELP_TEXT = (
     "  SUBSCRIBE LOS ABV [target price]\n"
     "  SUBSCRIBE LOS ABV 2026-08-15 [target]\n"
     "  FARE LOS ABV [date]\n"
-    "  TRACK P47123 2026-07-20\n\n"
+    "  TRACK P47123 2026-07-20\n"
+    "  AIRLINES — list airlines we track\n"
+    "  AIRLINE Xejet — suggest an airline to track\n\n"
     "  UNSUBSCRIBE — remove all alerts and delete your data\n\n"
     "HELP — this message"
 )
@@ -124,6 +127,16 @@ class BotRouter:
         if cmd == "TRACK" and len(parts) >= 2 and any(c.isdigit() for c in parts[1]):
             date_str = parts[2] if len(parts) > 2 else None
             return self._track_flight(user_id, parts[1], date_str)
+        if cmd == "AIRLINES":
+            return tmpl.airline_list_reply(get_tracked_airlines())
+        if cmd == "AIRLINE":
+            if len(parts) >= 2:
+                return self._handle_airline_request(user_id, " ".join(parts[1:]))
+            _pending[user_id] = {
+                "action": "airline_request", "intent": Intent(action="airline_request"),
+                "created_at": datetime.utcnow(),
+            }
+            return tmpl.airline_request_prompt()
 
         # ── 1b. Resolve pending follow-up question ────────────────────
         resolved = self._try_resolve_pending(user_id, text)
@@ -174,6 +187,18 @@ class BotRouter:
         if intent.action == "track":
             return self._handle_natural_track(user_id, intent)
 
+        if intent.action == "airline_list":
+            return tmpl.airline_list_reply(get_tracked_airlines())
+
+        if intent.action == "airline_request":
+            if not intent.airline:
+                _pending[user_id] = {
+                    "action": "airline_request", "intent": intent,
+                    "created_at": datetime.utcnow(),
+                }
+                return tmpl.airline_request_prompt()
+            return self._handle_airline_request(user_id, intent.airline)
+
         # Unknown intent — shouldn't happen given confidence check
         return HELP_TEXT
 
@@ -202,6 +227,10 @@ class BotRouter:
         del _pending[user_id]
         action = pending["action"]
         intent: Intent = pending["intent"]
+
+        # Airline follow-up: the reply IS the airline name (not a city)
+        if action == "airline_request":
+            return self._handle_airline_request(user_id, text.strip())
 
         # Try to extract a city from the reply
         city = resolve_iata(text.strip())
@@ -261,7 +290,8 @@ class BotRouter:
         return tmpl.fare_found_reply(
             route.origin, route.destination, cheapest["price_local"],
             cheapest["currency_local"], cheapest["price_usd"],
-            cheapest["source"], date_label)
+            cheapest["source"], date_label,
+            link=google_flights_url(route.origin, route.destination, intent.date))
 
     def _handle_natural_subscribe(self, user_id: str, intent: Intent) -> str:
         """Handle a subscribe intent from natural language."""
@@ -293,6 +323,43 @@ class BotRouter:
             )
         date_str = intent.date.strftime("%Y-%m-%d") if intent.date else None
         return self._track_flight(user_id, intent.flight_number, date_str)
+
+    def _handle_airline_request(self, user_id: str, airline_name: str) -> str:
+        """Log a user's suggestion for an airline to track.
+
+        If the airline is already in the tracked set (defaults +
+        EXTRA_TRACKED_AIRLINES), tell the user it's covered. Otherwise store
+        an AirlineRequest row for ops review — approving it means adding the
+        carrier to EXTRA_TRACKED_AIRLINES, which extends the ingestor's
+        attribution map and safety-filter allow-list without a redeploy.
+        """
+        airline_name = " ".join(airline_name.split()).strip(" .!?")
+        if not airline_name or len(airline_name) > 60:
+            return tmpl.airline_request_prompt()
+        normalized = airline_name.title()
+
+        # Already tracked? (match by name or IATA code, skip defunct entries)
+        for code, name in get_tracked_airlines().items():
+            if "defunct" in name.lower():
+                continue
+            if (normalized.lower() == name.lower()
+                    or normalized.upper() == code
+                    or normalized.lower() in name.lower()):
+                return tmpl.airline_already_tracked_reply(name)
+
+        existing = self.db.query(AirlineRequest).filter_by(
+            user_id=user_id, airline_name=normalized).first()
+        if existing:
+            return tmpl.airline_request_duplicate_reply(normalized)
+
+        self.db.add(AirlineRequest(user_id=user_id, airline_name=normalized))
+        try:
+            self.db.commit()
+        except IntegrityError:
+            self.db.rollback()
+            return tmpl.airline_request_duplicate_reply(normalized)
+        logger.info("AIRLINE REQUEST: user=%s airline=%s", user_id, normalized)
+        return tmpl.airline_request_logged_reply(normalized)
 
     def _do_subscribe(self, route, target_date, target_price,
                       user_id: str = "") -> str:
@@ -414,7 +481,8 @@ class BotRouter:
         return tmpl.fare_found_reply(
             route.origin, route.destination, cheapest["price_local"],
             cheapest["currency_local"], cheapest["price_usd"],
-            cheapest["source"], date_label)
+            cheapest["source"], date_label,
+            link=google_flights_url(route.origin, route.destination, target_date))
 
     def _get_or_create_route(self, origin: str, dest: str) -> Route:
         """Get existing route or create a new one. Handles race conditions."""

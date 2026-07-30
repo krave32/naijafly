@@ -18,7 +18,8 @@ def delete_user_data(db: Session, user_id: str, anonymous_id: str = "[deleted]")
     2. main.opt_out_webhook() — when Twilio sends the opt-out callback for STOP
     """
     from app.models.models import (
-        UserSubscription, AlertHistory, StatusReport, ReporterScore, SeenUser
+        UserSubscription, AlertHistory, StatusReport, ReporterScore, SeenUser,
+        AirlineRequest,
     )
 
     fare_subs = db.query(UserSubscription).filter(
@@ -49,6 +50,11 @@ def delete_user_data(db: Session, user_id: str, anonymous_id: str = "[deleted]")
     db.query(ReporterScore).filter(
         ReporterScore.reporter_id == user_id
     ).update({"reporter_id": anonymous_id}, synchronize_session=False)
+
+    # Anonymize airline tracking suggestions
+    db.query(AirlineRequest).filter(
+        AirlineRequest.user_id == user_id
+    ).update({"user_id": anonymous_id}, synchronize_session=False)
 
     # Remove SeenUser record (allows fresh welcome if they re-engage)
     db.query(SeenUser).filter(

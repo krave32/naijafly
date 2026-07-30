@@ -9,16 +9,20 @@ Endpoints:
   GET  /admin             - minimal HTML admin view (HTTP Basic Auth protected)
   GET  /health            - liveness
 """
-import base64
 import logging
 import os
+import secrets
 from dotenv import load_dotenv
 load_dotenv()
 
-from fastapi import FastAPI, Form, Depends, Request
+from fastapi import FastAPI, Form, Depends, Request, HTTPException, status
 from fastapi.responses import Response, HTMLResponse, FileResponse
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
+
+from app.utils.fli_patch import apply_patches as _apply_fli_patches
+_apply_fli_patches()
 
 from app.core.database import engine, get_db
 from app.models.models import Base, SeenUser
@@ -38,6 +42,25 @@ if not ADMIN_USER or not ADMIN_PASSWORD:
         "ADMIN_USER / ADMIN_PASSWORD not set - /admin is running UNPROTECTED. "
         "Set these env vars before any public-facing deployment."
     )
+
+security = HTTPBasic()
+
+
+def verify_admin(credentials: HTTPBasicCredentials = Depends(security)):
+    """Verify admin credentials with timing-safe comparison.
+    Returns the username on success. If auth is disabled (no env vars), allows access."""
+    if not ADMIN_USER or not ADMIN_PASSWORD:
+        return "admin"
+    correct_user = secrets.compare_digest(credentials.username, ADMIN_USER)
+    correct_pass = secrets.compare_digest(credentials.password, ADMIN_PASSWORD)
+    if not (correct_user and correct_pass):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid admin credentials",
+            headers={"WWW-Authenticate": "Basic"},
+        )
+    return credentials.username
+
 
 def _migrate_target_date():
     """Add target_date column to subscriptions table if it doesn't exist."""
@@ -140,33 +163,6 @@ async def opt_in_webhook(
     return {"status": "ok", "user": user_id}
 
 
-def _check_admin_auth(request: Request) -> bool:
-    """Validate HTTP Basic Auth credentials for admin routes.
-
-    Returns True if credentials are valid, or if auth is disabled (no env vars set).
-    Returns False if credentials are set but invalid.
-    """
-    if not ADMIN_USER or not ADMIN_PASSWORD:
-        return True  # auth disabled - warning logged at startup
-
-    auth_header = request.headers.get("Authorization", "")
-    if not auth_header.startswith("Basic "):
-        return False
-
-    try:
-        decoded = base64.b64decode(auth_header[6:]).decode("utf-8")
-        user, password = decoded.split(":", 1)
-        return user == ADMIN_USER and password == ADMIN_PASSWORD
-    except Exception:
-        return False
-
-
 @app.get("/admin", response_class=HTMLResponse)
-def admin(request: Request, db: Session = Depends(get_db)):
-    if not _check_admin_auth(request):
-        return HTMLResponse(
-            "<h1>401 Unauthorized</h1><p>Invalid credentials.</p>",
-            status_code=401,
-            headers={"WWW-Authenticate": 'Basic realm="Araha Admin"'}
-        )
+def admin(admin_user=Depends(verify_admin), db: Session = Depends(get_db)):
     return render_admin(db)

@@ -114,6 +114,25 @@ class ReporterScore(Base):
         return (self.contradicted_reports or 0) / self.total_reports
 
 
+class AirlineRequest(Base):
+    """User suggestions for airlines to track beyond the default set.
+
+    Users text e.g. 'AIRLINE Xejet' or 'add airline Rano Air'. Requests are
+    stored here for ops review; approving one means adding its IATA code to
+    the EXTRA_TRACKED_AIRLINES env var (see fare_ingestor), which extends
+    both the attribution map and the safety-filter allow-list — no redeploy.
+    """
+    __tablename__ = "airline_requests"
+    __table_args__ = (
+        UniqueConstraint('user_id', 'airline_name', name='uq_airline_request_user_name'),
+    )
+    id = Column(Integer, primary_key=True)
+    user_id = Column(String, index=True)           # WhatsApp number
+    airline_name = Column(String)                  # as typed, normalized
+    status = Column(String, default="pending")     # pending|approved|rejected
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class SeenUser(Base):
     """Tracks first-contact status per WhatsApp number.
 

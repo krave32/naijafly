@@ -208,7 +208,8 @@ def main():
 
     scheduler = BlockingScheduler()
     scheduler.add_job(run_cycle, "interval", minutes=POLL_MINUTES,
-                      next_run_time=datetime.now())
+                      next_run_time=datetime.now(),
+                      max_instances=1)
     logger.info(
         "Fare worker started. Poll=%dmin, window=%dd, sample every %dd, "
         "FARE_SOURCE=%s",

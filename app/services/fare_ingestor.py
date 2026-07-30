@@ -31,11 +31,27 @@ import random
 import time
 from abc import ABC, abstractmethod
 from datetime import datetime
-from typing import Dict, List
+from typing import Dict, List, Optional
+from urllib.parse import quote_plus
 
 import requests
 
 logger = logging.getLogger("araha.fare_ingestor")
+
+
+def google_flights_url(origin: str, destination: str,
+                       date: Optional[datetime] = None) -> str:
+    """Build a direct Google Flights search link for a route (+ optional date).
+
+    Lets users independently verify any fare we show them — the link opens
+    the exact same search the GoogleFlightsIngestor ran. Works for any
+    IATA pair, so it's also attached to mock/Amadeus fares as a
+    "check the live price yourself" escape hatch.
+    """
+    query = f"Flights from {origin.upper()} to {destination.upper()}"
+    if date is not None:
+        query += f" on {date.strftime('%Y-%m-%d')}"
+    return f"https://www.google.com/travel/flights?q={quote_plus(query)}&curr=NGN"
 
 
 class FareIngestor(ABC):
@@ -224,13 +240,14 @@ class AmadeusFareIngestor(FareIngestor):
                 currency = offer["price"]["currency"]
                 carrier_code = offer["validatingAirlineCodes"][0] if offer.get(
                     "validatingAirlineCodes") else ""
-                carrier_name = WEST_AFRICAN_AIRLINES.get(carrier_code, carrier_code)
+                carrier_name = get_tracked_airlines().get(carrier_code, carrier_code)
                 source = f"{carrier_name} ({carrier_code}) via Amadeus" if carrier_code else "Amadeus GDS"
                 fares.append({
                     "price": price,
                     "currency": currency,
                     "source": source,
                     "flight_date": date,
+                    "link": google_flights_url(origin, destination, date),
                 })
             except (KeyError, IndexError, ValueError, TypeError):
                 continue  # skip malformed offer rather than fail the whole batch
@@ -277,6 +294,40 @@ NIGERIAN_DOMESTIC_AIRLINES = {
     "UM",  # Umza Air
     "Q9",  # Enugu Air
 }
+
+
+def get_extra_tracked_airlines() -> Dict[str, str]:
+    """Parse EXTRA_TRACKED_AIRLINES env var into {IATA: name}.
+
+    Format: "XJ:Xejet,RN:Rano Air" (comma-separated CODE:Name pairs).
+    This is how user-suggested airlines (AirlineRequest rows approved by
+    ops) get added to both the attribution map and the safety-filter
+    allow-list without a redeploy. Malformed entries are skipped.
+    """
+    raw = os.getenv("EXTRA_TRACKED_AIRLINES", "")
+    extra: Dict[str, str] = {}
+    for pair in raw.split(","):
+        pair = pair.strip()
+        if not pair or ":" not in pair:
+            continue
+        code, _, name = pair.partition(":")
+        code, name = code.strip().upper(), name.strip()
+        if 2 <= len(code) <= 3 and name:
+            extra[code] = name
+    return extra
+
+
+def get_tracked_airlines() -> Dict[str, str]:
+    """Default attribution map merged with EXTRA_TRACKED_AIRLINES."""
+    merged = dict(WEST_AFRICAN_AIRLINES)
+    merged.update(get_extra_tracked_airlines())
+    return merged
+
+
+def get_allowed_airlines() -> set:
+    """Safety-filter allow-list: defaults + user-suggested extras."""
+    return NIGERIAN_DOMESTIC_AIRLINES | set(get_extra_tracked_airlines())
+
 
 # Currency for Nigerian domestic flights (always NGN).
 # Kept as a dict for backward compatibility with ingestor code that looks up
@@ -387,6 +438,13 @@ class GoogleFlightsIngestor(FareIngestor):
             return []
 
         fares = []
+        # Attribution map + allow-list, including user-suggested airlines
+        # approved via EXTRA_TRACKED_AIRLINES (re-read each cycle, no redeploy).
+        tracked_airlines = get_tracked_airlines()
+        allowed_airlines = get_allowed_airlines()
+        # Direct link to the same Google Flights search — attached to every
+        # fare so users can verify the price/airline independently.
+        verify_link = google_flights_url(origin, destination, date)
         for flight in results[:self.max_results]:
             try:
                 price = float(flight.price) if hasattr(flight, 'price') else None
@@ -394,33 +452,29 @@ class GoogleFlightsIngestor(FareIngestor):
                     continue
 
                 # ── Extract airline info ────────────────────────────────
-                # ROOT CAUSE FIX (2026-07): The fli library's internal Airline
-                # enum has WRONG string values (e.g. P4 → 'Aerolineas Sosa'
-                # instead of 'Air Peace'). We must NOT trust leg.airline.value.
-                # Instead, use flight.primary_airline_name (correct human name)
-                # and flight.primary_airline.name (correct IATA code).
+                # The fli library's Airline enum values are patched at startup
+                # (app/utils/fli_patch.py) so leg.airline.value returns the
+                # correct name. We still prefer our own name mapping for
+                # authoritative display names.
                 airline_code = ""
                 airline_name = "Unknown"
 
-                # Method 1: primary_airline_name (most reliable, always correct)
-                if hasattr(flight, 'primary_airline_name') and flight.primary_airline_name:
-                    airline_name = flight.primary_airline_name
-                # Method 2: primary_airline enum .name gives the IATA code
+                # Get the IATA code from the primary airline
                 if hasattr(flight, 'primary_airline') and flight.primary_airline:
                     airline_code = flight.primary_airline.name
-                # Fallback: leg airline .name (IATA code from enum)
                 elif hasattr(flight, 'legs') and flight.legs:
                     leg = flight.legs[0]
                     if hasattr(leg, 'airline') and leg.airline:
-                        airline_code = leg.airline.name if hasattr(leg.airline, 'name') else ""
+                        airline_code = leg.airline.name
 
-                # Look up our own name mapping (authoritative)
+                # Use our own name mapping (authoritative)
                 if airline_code:
-                    airline_name = WEST_AFRICAN_AIRLINES.get(airline_code, airline_name)
+                    airline_name = tracked_airlines.get(airline_code, airline_name)
 
                 # ── Safety filter: drop implausible airlines ───────────
-                # For Nigeria-domestic routes, only allow known carriers.
-                if airline_code and airline_code not in NIGERIAN_DOMESTIC_AIRLINES:
+                # For Nigeria-domestic routes, only allow known carriers
+                # (defaults + approved user suggestions).
+                if airline_code and airline_code not in allowed_airlines:
                     logger.warning(
                         "SAFETY FILTER: dropping fare from implausible airline "
                         "%s (%s) for Nigeria-domestic route %s->%s. "
@@ -441,6 +495,7 @@ class GoogleFlightsIngestor(FareIngestor):
                     "currency": currency,
                     "source": source,
                     "flight_date": date,
+                    "link": verify_link,
                 })
             except (AttributeError, TypeError, ValueError):
                 continue  # skip malformed result

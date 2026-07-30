@@ -57,6 +57,7 @@ EMOJI_RATE_LIMITED = "⏳"
 EMOJI_UNCLEAR = "❓"
 EMOJI_WELCOME = "👋"
 EMOJI_STOP = "✅"
+EMOJI_AIRLINE = "✈️"
 
 # Keywords that trigger the welcome intro on-demand (any user, new or returning)
 GREETING_KEYWORDS = {"HI", "HELLO", "START", "MENU"}
@@ -89,9 +90,13 @@ def tracking_reply(flight_number: str) -> str:
 
 def fare_found_reply(origin: str, destination: str, price_local: float,
                      currency_local: str, price_usd: float, source: str,
-                     date_label: str = "next 30 days") -> str:
-    return (f"{EMOJI_FARE_FOUND} Cheapest {origin}->{destination} ({date_label}): "
-            f"{price_local:,.0f} {currency_local} (~${price_usd:,.2f} USD) on {source}")
+                     date_label: str = "next 30 days",
+                     link: str | None = None) -> str:
+    msg = (f"{EMOJI_FARE_FOUND} Cheapest {origin}->{destination} ({date_label}): "
+           f"{price_local:,.0f} {currency_local} (~${price_usd:,.2f} USD) on {source}")
+    if link:
+        msg += f"\n\nVerify on Google Flights: {link}"
+    return msg
 
 
 def no_route_reply(origin: str, destination: str) -> str:
@@ -165,10 +170,60 @@ def stop_confirmation(removed_count: int) -> str:
 
 
 def fare_drop_push(origin: str, destination: str, price: float, currency: str,
-                   usd: float, source: str, date_label: str = "") -> str:
+                   usd: float, source: str, date_label: str = "",
+                   link: str | None = None) -> str:
     date_part = f" ({date_label})" if date_label else ""
-    return (f"{EMOJI_FARE_DROP} [Araha] Price drop {origin}->{destination}{date_part}: "
-            f"{price:,.0f} {currency} (~${usd:,.2f} USD) on {source}.")
+    msg = (f"{EMOJI_FARE_DROP} [Araha] Price drop {origin}->{destination}{date_part}: "
+           f"{price:,.0f} {currency} (~${usd:,.2f} USD) on {source}.")
+    if link:
+        msg += f"\nVerify on Google Flights: {link}"
+    return msg
+
+
+def airline_request_logged_reply(airline: str) -> str:
+    """Acknowledgement after a user suggests an airline to track."""
+    return (
+        f"{EMOJI_AIRLINE} Got it — you'd like us to track *{airline}*.\n"
+        "Your suggestion has been logged. Once we verify the airline's "
+        "fares are available, it'll join the tracked list and show up in "
+        "your fare results automatically."
+    )
+
+
+def airline_already_tracked_reply(airline: str) -> str:
+    return (
+        f"{EMOJI_AIRLINE} Good news — {airline} is already on our tracked "
+        "list! Its fares appear automatically in FARE results and price-drop "
+        "alerts whenever Google Flights has data for your route."
+    )
+
+
+def airline_request_duplicate_reply(airline: str) -> str:
+    return (
+        f"{EMOJI_AIRLINE} You've already suggested {airline} — it's on our "
+        "review list. We'll start tracking it once its fare data is verified."
+    )
+
+
+def airline_request_prompt() -> str:
+    return (
+        f"{EMOJI_AIRLINE} Which airline would you like us to track? "
+        'Reply with the name, e.g. "Xejet" or "Rano Air". '
+        "Type AIRLINES to see what we already cover."
+    )
+
+
+def airline_list_reply(airlines: dict[str, str]) -> str:
+    """List currently tracked airlines ({IATA: name}, defunct ones excluded)."""
+    lines = "\n".join(
+        f"  • {name} ({code})"
+        for code, name in sorted(airlines.items(), key=lambda kv: kv[1])
+        if "defunct" not in name.lower()
+    )
+    return (
+        f"{EMOJI_AIRLINE} Airlines we currently track:\n{lines}\n\n"
+        'Want another one? Just say e.g. "add airline Xejet".'
+    )
 
 
 def status_confirmed_push(flight_number: str, status_type: StatusType, gate: str | None) -> str:

@@ -62,12 +62,13 @@ _MONTHS: dict[str, int] = {
 @dataclass
 class Intent:
     """Structured representation of a parsed user message."""
-    action: str  # "fare_query" | "subscribe" | "help" | "track" | None
+    action: str  # "fare_query" | "subscribe" | "help" | "track" | "airline_request" | "airline_list" | None
     origin: Optional[str] = None       # IATA code
     destination: Optional[str] = None  # IATA code
     date: Optional[datetime] = None
     target_price: Optional[float] = None
     flight_number: Optional[str] = None  # e.g. "P47123"
+    airline: Optional[str] = None      # e.g. "Xejet" (airline_request intents)
     confidence: float = 0.0            # 0.0–1.0
     raw_text: str = ""
 
@@ -94,6 +95,18 @@ def parse_intent(text: str) -> Intent:
 
     # ── Detect intent keyword ──────────────────────────────────────────
     action = _detect_action(lower)
+
+    # Airline intents short-circuit (no route/date needed)
+    if action == "airline_list":
+        return Intent(action="airline_list", confidence=0.9, raw_text=raw)
+    if action == "airline_request":
+        airline = _extract_airline(lower)
+        return Intent(
+            action="airline_request",
+            airline=airline,
+            confidence=0.9 if airline else 0.5,
+            raw_text=raw,
+        )
 
     # ── Extract flight number (for track intents) ───────────────────────
     flight_number = _extract_flight_number(lower) if action == "track" else None
@@ -138,6 +151,28 @@ def _is_help(text: str) -> bool:
 
 def _detect_action(text: str) -> Optional[str]:
     """Determine the user's intent from keywords."""
+    # Airline list / airline suggestion patterns — checked FIRST because
+    # phrases like "track airline Xejet" would otherwise match the flight
+    # track patterns, and "watch Xejet airline" the subscribe patterns.
+    airline_list_patterns = [
+        r"\b(which|what|list)\s+airlines?\b",
+        r"\bairlines?\s+(do\s+you|you)\s+(track|cover|support|watch|monitor)\b",
+        r"\bshow\s+(me\s+)?(the\s+)?airlines\b",
+    ]
+    for pat in airline_list_patterns:
+        if re.search(pat, text):
+            return "airline_list"
+
+    airline_request_patterns = [
+        r"\b(track|add|watch|monitor|follow|suggest|include|cover)\s+(the\s+)?airline\b",
+        r"\bairline\s+(request|suggestion)\b",
+        r"\b(can|could)\s+you\s+(track|add|watch|cover|monitor)\s+\S.*\b(air|airline|airlines|airways|jet)\b",
+        r"\b(track|add|watch|monitor|cover)\s+\S.*\s(airline|airlines|airways)\b",
+    ]
+    for pat in airline_request_patterns:
+        if re.search(pat, text):
+            return "airline_request"
+
     # Subscribe / alert patterns
     subscribe_patterns = [
         r"\balert\s*(me|us)?\b",
@@ -371,6 +406,46 @@ def _extract_flight_number(text: str) -> Optional[str]:
     m = re.search(r"(?:flight|#)\s*(\d{2,5})\b", text)
     if m:
         return m.group(1)
+
+    return None
+
+
+# Loose airline-name shape: letters/digits, spaces, & ' - .
+_AIRLINE_NAME_RE = r"[a-z0-9][a-z0-9 &'\-\.]{1,40}"
+
+
+def _extract_airline(text: str) -> Optional[str]:
+    """Extract an airline name from an airline_request phrase.
+
+    Handles: "track airline Xejet", "add Rano Air airlines",
+    "can you track Xejet", "suggest airline: Aero Contractors"
+    """
+    # "... airline Xejet" — name after the keyword 'airline'
+    m = re.search(rf"\bairlines?\s*[:\-]?\s+({_AIRLINE_NAME_RE})", text)
+    if m:
+        name = m.group(1).strip(" .!?")
+        name = re.sub(r"\s+(please|for\s+me|too|as\s+well)$", "", name)
+        if name and name not in {"request", "suggestion"}:
+            return name.title()
+
+    # "track/add <Name> airline(s)/airways" — name before the keyword
+    m = re.search(
+        rf"\b(?:track|add|watch|monitor|cover|include)\s+(?:the\s+)?"
+        rf"({_AIRLINE_NAME_RE}?)\s+(?:airlines?|airways)\b",
+        text)
+    if m:
+        name = m.group(1).strip(" .!?")
+        if name:
+            return name.title()
+
+    # "can you track Xejet" — name ends the sentence
+    m = re.search(
+        r"\b(?:can|could)\s+you\s+(?:track|add|watch|cover|monitor)\s+(.+?)[\s.!?]*$",
+        text)
+    if m:
+        name = m.group(1).strip(" .!?")
+        if name:
+            return name.title()
 
     return None
 
