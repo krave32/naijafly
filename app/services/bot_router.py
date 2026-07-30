@@ -26,7 +26,7 @@ logger = logging.getLogger("araha.bot_router")
 
 from app.models.models import Route, Flight, UserSubscription, StatusType, SeenUser, AlertHistory, StatusReport, ReporterScore, AirlineRequest
 from app.services.fare_service import FareService
-from app.services.fare_ingestor import get_tracked_airlines
+from app.services.fare_ingestor import google_flights_url, get_tracked_airlines
 from app.services.status_service import StatusAggregationService
 from app.utils.parser import MessageParser
 from app.utils.intent_parser import parse_intent, Intent, resolve_iata
@@ -291,7 +291,7 @@ class BotRouter:
             route.origin, route.destination, cheapest["price_local"],
             cheapest["currency_local"], cheapest["price_usd"],
             cheapest["source"], date_label,
-            link=cheapest.get("booking_link", ""))
+            link=google_flights_url(route.origin, route.destination, intent.date))
 
     def _handle_natural_subscribe(self, user_id: str, intent: Intent) -> str:
         """Handle a subscribe intent from natural language."""
@@ -482,7 +482,7 @@ class BotRouter:
             route.origin, route.destination, cheapest["price_local"],
             cheapest["currency_local"], cheapest["price_usd"],
             cheapest["source"], date_label,
-            link=cheapest.get("booking_link", ""))
+            link=google_flights_url(route.origin, route.destination, target_date))
 
     def _get_or_create_route(self, origin: str, dest: str) -> Route:
         """Get existing route or create a new one. Handles race conditions."""

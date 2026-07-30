@@ -24,7 +24,7 @@ from sqlalchemy.orm import sessionmaker
 from app.models.models import Base, AirlineRequest, Route, Fare, UserSubscription
 from app.services.bot_router import BotRouter, HELP_TEXT
 from app.services.fare_service import FareService
-from app.services.fare_ingestor import google_flights_url, google_flights_deep_link
+from app.services.fare_ingestor import google_flights_url
 from app.utils.intent_parser import parse_intent
 from app.utils import notify_templates as tmpl
 
@@ -168,8 +168,7 @@ class TestAirlineSuggestionFlow:
 # Google Flights verification links in user-facing messages
 # ============================================================================
 
-def _seed_route_with_fare(db, origin="LOS", dest="ABV", price=85000,
-                           booking_token="test_token_123"):
+def _seed_route_with_fare(db, origin="LOS", dest="ABV", price=85000):
     route = Route(origin=origin, destination=dest)
     db.add(route)
     db.commit()
@@ -177,26 +176,24 @@ def _seed_route_with_fare(db, origin="LOS", dest="ABV", price=85000,
         route_id=route.id, price=price, currency="NGN",
         source="Air Peace (P4) via Google Flights",
         flight_date=datetime.utcnow() + timedelta(days=5),
-        booking_token=booking_token,
     ))
     db.commit()
     return route
 
 
 class TestVerificationLinks:
-    def test_fare_command_reply_includes_booking_link(self):
+    def test_fare_command_reply_includes_google_flights_link(self):
         router, db, _ = _router()
         _seed_route_with_fare(db)
         reply = router.handle("whatsapp:link_user_1", "FARE LOS ABV")
-        assert "View & book this fare" in reply
-        assert "google.com/travel/flights/booking" in reply
+        assert "google.com/travel/flights" in reply
+        assert "Check on Google Flights" in reply
 
     def test_natural_fare_reply_includes_link(self):
         router, db, _ = _router()
         _seed_route_with_fare(db)
         reply = router.handle("whatsapp:link_user_2", "cheap flights from Lagos to Abuja")
-        assert "View & book this fare" in reply
-        assert "google.com/travel/flights/booking" in reply
+        assert "google.com/travel/flights" in reply
 
     def test_fare_reply_with_date_links_that_date(self):
         router, db, _ = _router()
@@ -206,16 +203,14 @@ class TestVerificationLinks:
             route_id=route.id, price=90000, currency="NGN",
             source="Arik Air (W3) via Google Flights",
             flight_date=datetime(2026, 8, 15),
-            booking_token="test_token_456",
         ))
         db.commit()
         reply = router.handle("whatsapp:link_user_3", "FARE LOS ABV 2026-08-15")
         assert "2026-08-15" in reply
-        assert "View & book this fare" in reply
-        assert "google.com/travel/flights/booking" in reply
+        assert "Flights+from+LOS+to+ABV+on+2026-08-15" in reply
 
     def test_fare_drop_push_includes_link(self):
-        """Fare-drop alerts also carry the booking link."""
+        """Fare-drop alerts also carry the verification link."""
         engine = create_engine("sqlite:///:memory:")
         Base.metadata.create_all(engine)
         db = sessionmaker(bind=engine)()
@@ -234,12 +229,10 @@ class TestVerificationLinks:
             "price": 80000, "currency": "NGN",
             "source": "Air Peace (P4) via Google Flights",
             "flight_date": datetime.utcnow() + timedelta(days=5),
-            "booking_token": "test_token_push",
         }])
 
         assert len(notifier.sent) == 1
-        assert "View & book this fare" in notifier.sent[0]["body"]
-        assert "google.com/travel/flights/booking" in notifier.sent[0]["body"]
+        assert "google.com/travel/flights" in notifier.sent[0]["body"]
 
     def test_no_fare_data_reply_has_no_link(self):
         """Empty results don't get a misleading 'verify' link."""
@@ -258,8 +251,9 @@ class TestVerificationLinks:
         push = tmpl.fare_drop_push("LOS", "ABV", 70000, "NGN", 46.67, "Air Peace")
         assert "google.com" not in push
 
-    def test_google_flights_deep_link_helper(self):
-        """The deep link helper builds a booking URL from a token."""
-        url = google_flights_deep_link("test_token_abc")
-        assert "google.com/travel/flights/booking/" in url
-        assert "token=test_token_abc" in url
+    def test_google_flights_url_helper_matches_reply(self):
+        link = google_flights_url("LOS", "ABV")
+        router, db, _ = _router()
+        _seed_route_with_fare(db)
+        reply = router.handle("whatsapp:link_user_6", "FARE LOS ABV")
+        assert link in reply
