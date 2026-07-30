@@ -37,6 +37,7 @@ class Fare(Base):
     currency = Column(String) # NGN, GHS, USD
     source = Column(String) # Air Peace, Dana, Mock
     flight_date = Column(DateTime)
+    booking_token = Column(String, nullable=True) # fli booking token for deep link
     created_at = Column(DateTime, default=datetime.utcnow)
     
     route = relationship("Route", back_populates="fares")

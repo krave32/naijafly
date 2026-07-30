@@ -39,6 +39,18 @@ import requests
 logger = logging.getLogger("araha.fare_ingestor")
 
 
+def google_flights_deep_link(booking_token: str) -> str:
+    """Build a Google Flights booking deep link from a fli booking token.
+
+    Opens the exact flight itinerary with the price visible, ready to book.
+    Falls back to a generic search if the token is empty.
+    """
+    if not booking_token:
+        return ""
+    token_encoded = quote_plus(booking_token)
+    return f"https://www.google.com/travel/flights/booking/?token={token_encoded}"
+
+
 def google_flights_url(origin: str, destination: str,
                        date: Optional[datetime] = None) -> str:
     """Build a direct Google Flights search link for a route (+ optional date).
@@ -490,12 +502,18 @@ class GoogleFlightsIngestor(FareIngestor):
 
                 source = f"{airline_name} ({airline_code}) via Google Flights"
 
+                # Extract booking token for deep link
+                booking_token = None
+                if hasattr(flight, 'booking_token') and flight.booking_token:
+                    booking_token = flight.booking_token
+
                 fares.append({
                     "price": price,
                     "currency": currency,
                     "source": source,
                     "flight_date": date,
                     "link": verify_link,
+                    "booking_token": booking_token,
                 })
             except (AttributeError, TypeError, ValueError):
                 continue  # skip malformed result

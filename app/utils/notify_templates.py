@@ -95,7 +95,7 @@ def fare_found_reply(origin: str, destination: str, price_local: float,
     msg = (f"{EMOJI_FARE_FOUND} Cheapest {origin}->{destination} ({date_label}): "
            f"{price_local:,.0f} {currency_local} (~${price_usd:,.2f} USD) on {source}")
     if link:
-        msg += f"\n\nVerify on Google Flights: {link}"
+        msg += f"\n\nView & book this fare: {link}"
     return msg
 
 
@@ -176,7 +176,7 @@ def fare_drop_push(origin: str, destination: str, price: float, currency: str,
     msg = (f"{EMOJI_FARE_DROP} [Araha] Price drop {origin}->{destination}{date_part}: "
            f"{price:,.0f} {currency} (~${usd:,.2f} USD) on {source}.")
     if link:
-        msg += f"\nVerify on Google Flights: {link}"
+        msg += f"\nView & book this fare: {link}"
     return msg
 
 
