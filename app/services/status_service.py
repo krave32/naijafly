@@ -29,6 +29,7 @@ from app.utils import notify_templates as tmpl
 CONTRADICTION_THRESHOLD = 0.5   # >50% of your reports contradicted -> flagged
 MIN_REPORTS_FOR_FLAG = 3        # don't flag anyone on tiny samples
 MAJORITY_FACTOR = 2             # bucket wins dispute if >= 2x rival size
+TRUSTED_CONFIRMED_REPORTS = 3   # >=3 confirmed reports (low contradiction) -> trusted
 
 
 class StatusAggregationService:
@@ -55,6 +56,18 @@ class StatusAggregationService:
         if not score or score.total_reports < MIN_REPORTS_FOR_FLAG:
             return False
         return score.contradiction_rate > CONTRADICTION_THRESHOLD
+
+    def is_trusted(self, reporter_id: str) -> bool:
+        """A reporter is trusted once they have enough CONFIRMED reports and
+        are not flagged. Trusted reports carry double weight toward
+        confirmation, so a single trusted reporter can confirm a status
+        (reliability earned, not given)."""
+        score = self.db.query(ReporterScore).filter_by(reporter_id=reporter_id).first()
+        if not score:
+            return False
+        if self.is_flagged(reporter_id):
+            return False
+        return (score.confirmed_reports or 0) >= TRUSTED_CONFIRMED_REPORTS
 
     # ---------- intake ----------
 
@@ -109,9 +122,14 @@ class StatusAggregationService:
         if not buckets:
             return  # only flagged reporters spoke; never confirm from them
 
-        # Count DISTINCT reporters per bucket (2 reports from one person != confirmation)
+        # Count DISTINCT reporters per bucket, weighted by trust:
+        # trusted = 2 votes, normal = 1 (2 reports from one person != confirmation,
+        # but a proven trusted reporter's word counts double).
         def distinct(group):
-            return len({r.reporter_id for r in group})
+            total = 0
+            for rid in {r.reporter_id for r in group}:
+                total += 2 if self.is_trusted(rid) else 1
+            return total
 
         sorted_buckets = sorted(buckets.items(), key=lambda kv: distinct(kv[1]), reverse=True)
         top_key, top_group = sorted_buckets[0]
@@ -153,6 +171,10 @@ class StatusAggregationService:
             r.status = ReportStatus.CONFIRMED
             score = self._get_score(r.reporter_id)
             score.confirmed_reports = (score.confirmed_reports or 0) + 1
+            # Promote to trusted once enough confirmed reports (and not flagged)
+            if (score.confirmed_reports or 0) >= TRUSTED_CONFIRMED_REPORTS and \
+               not self.is_flagged(r.reporter_id):
+                score.trust_level = "trusted"
         self.db.commit()
         if newly_confirmed:
             self.push_confirmed_status(flight_id, state_key_tuple[0], state_key_tuple[1])
@@ -160,19 +182,36 @@ class StatusAggregationService:
     # ---------- push loop (core value prop) ----------
 
     def push_confirmed_status(self, flight_id: int, status_type: StatusType, gate: str):
-        """Push a confirmed state to every subscriber of THIS flight, once."""
+        """Push a confirmed state to every subscriber of THIS flight, once.
+
+        Live-channel behaviour: users may have tracked the same flight number
+        as separate Flight rows (e.g. 'P47123' entered twice). We broadcast to
+        all subscribers whose flight matches the same flight_number, so the
+        whole channel hears the update — not just one record.
+        """
+        flight = self.db.query(Flight).get(flight_id)
+        flight_number = flight.flight_number.upper()
         state_key = f"{status_type.value}:{gate or '-'}"
         already = self.db.query(PushLog).filter_by(
             flight_id=flight_id, state_key=state_key).first()
         if already:
             return 0  # dedupe: this exact state was already broadcast
 
-        flight = self.db.query(Flight).get(flight_id)
-        body = tmpl.status_confirmed_push(flight.flight_number, status_type, gate)
+        body = tmpl.status_confirmed_push(flight_number, status_type, gate)
 
-        subs = self.db.query(UserSubscription).filter_by(flight_id=flight_id).all()
+        # All Flight rows sharing this flight number = one live channel
+        channel_ids = [f.id for f in self.db.query(Flight).filter(
+            Flight.flight_number.ilike(flight_number)).all()]
+        subs = self.db.query(UserSubscription).filter(
+            UserSubscription.flight_id.in_(channel_ids)).all()
+
+        # Dedupe within the channel: one message per user
         sent = 0
+        seen_users = set()
         for sub in subs:
+            if sub.user_id in seen_users:
+                continue
+            seen_users.add(sub.user_id)
             ok = self.notifier.send(sub.user_id, body) if self.notifier else False
             self.db.add(AlertHistory(
                 user_id=sub.user_id, alert_type="status_confirmed",
